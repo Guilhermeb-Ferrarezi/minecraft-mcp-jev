@@ -250,6 +250,10 @@ final class NeiIntegration {
         JsonObject r = new JsonObject();
         r.addProperty("handler", handlerName);
         r.add("ingredients", stacks(h.getIngredientStacks(i)));
+        JsonArray grid = craftingGrid(handlerName, h.getIngredientStacks(i));
+        if (grid != null) {
+            r.add("grid", grid);
+        }
         Object cached = null;
         if (h instanceof TemplateRecipeHandler) {
             List<TemplateRecipeHandler.CachedRecipe> list = ((TemplateRecipeHandler) h).arecipes;
@@ -280,6 +284,39 @@ final class NeiIntegration {
             addGregTechInfo(r, cached);
         }
         return r;
+    }
+
+    /**
+     * Receita de bancada como 9 casas em ordem de linha ("modid:nome:meta" ou null),
+     * no formato que o {@code craft} aceita. O NEI desenha a grade com a casa
+     * (coluna, linha) em x = 25 + 18·coluna, y = 6 + 18·linha. Null para outros
+     * handlers ou posições fora da grade.
+     */
+    private static JsonArray craftingGrid(String handlerName, List<PositionedStack> list) {
+        if (list == null || handlerName == null
+            || !handlerName.toLowerCase(Locale.ROOT)
+                .contains("crafting")) {
+            return null;
+        }
+        String[] cells = new String[9];
+        for (PositionedStack ps : list) {
+            if (ps == null || ps.item == null) {
+                continue;
+            }
+            int col = Math.round((ps.relx - 25) / 18f), row = Math.round((ps.rely - 6) / 18f);
+            if (col < 0 || col > 2 || row < 0 || row > 2) {
+                JsonArray bad = new JsonArray();
+                bad.add(new com.google.gson.JsonPrimitive("posição fora da grade: " + ps.relx + "," + ps.rely));
+                return bad;
+            }
+            int meta = ps.item.getItemDamage();
+            cells[row * 3 + col] = registryName(ps.item) + (meta == 32767 ? "" : ":" + meta);
+        }
+        JsonArray arr = new JsonArray();
+        for (String c : cells) {
+            arr.add(c == null ? com.google.gson.JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(c));
+        }
+        return arr;
     }
 
     /** Agrupa ingredientes iguais e soma quantidades; guarda alternativas do OreDictionary. */

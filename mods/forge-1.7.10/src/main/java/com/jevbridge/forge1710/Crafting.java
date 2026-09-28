@@ -177,6 +177,9 @@ final class Crafting {
                 "grid = 4 casas (2x2) ou 9 (3x3), em ordem de linha, nome do item ou null");
         }
         int times = Math.max(1, Math.min(64, Json.getInt(params, "times", 1)));
+        if (grid.size() == 9 && !(p.openContainer instanceof ContainerWorkbench)) {
+            grid = shrinkTo2x2(grid); // receita do NEI (3x3) que cabe no inventário
+        }
         Container c = p.openContainer;
         boolean table = c instanceof ContainerWorkbench;
         if (!table && c != p.inventoryContainer) {
@@ -287,6 +290,31 @@ final class Crafting {
         o.addProperty("gained", count(p, resultId) - before);
         o.addProperty("grid", table ? "3x3 (bancada)" : "2x2 (inventário)");
         return o;
+    }
+
+    /** 3x3 cujos itens cabem num quadrado 2x2 vira 2x2 (sem bancada); senão fica 3x3. */
+    private static JsonArray shrinkTo2x2(JsonArray g) {
+        int minR = 3, minC = 3, maxR = -1, maxC = -1;
+        for (int i = 0; i < 9; i++) {
+            if (!g.get(i)
+                .isJsonNull()) {
+                minR = Math.min(minR, i / 3);
+                maxR = Math.max(maxR, i / 3);
+                minC = Math.min(minC, i % 3);
+                maxC = Math.max(maxC, i % 3);
+            }
+        }
+        if (maxR < 0 || maxR - minR > 1 || maxC - minC > 1) {
+            return g;
+        }
+        JsonArray out = new JsonArray();
+        for (int r = 0; r < 2; r++) {
+            for (int c = 0; c < 2; c++) {
+                int rr = minR + r, cc = minC + c;
+                out.add(rr > 2 || cc > 2 ? com.google.gson.JsonNull.INSTANCE : g.get(rr * 3 + cc));
+            }
+        }
+        return out;
     }
 
     private static int count(EntityClientPlayerMP p, String id) {
