@@ -206,6 +206,19 @@ server.registerTool(
 );
 
 server.registerTool(
+  "get_fluids",
+  {
+    title: "Fluidos de um bloco",
+    description:
+      "Tanques de fluido do bloco em (x, y, z): válvula de Iron Tank, máquinas do GT, caldeiras. Para cada tanque: " +
+      "fluid, displayName, amount e capacity (em mB; 1000 mB = 1 balde). fluidHandler=false se o bloco não guarda fluido.",
+    inputSchema: { x: coord, y: coord, z: coord },
+    annotations: readOnly,
+  },
+  (args) => forward("get_fluids", args),
+);
+
+server.registerTool(
   "use_block",
   {
     title: "Usar bloco",
