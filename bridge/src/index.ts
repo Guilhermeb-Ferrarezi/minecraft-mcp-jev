@@ -133,6 +133,37 @@ server.registerTool(
 );
 
 server.registerTool(
+  "use_block",
+  {
+    title: "Usar bloco",
+    description:
+      "Clique direito num bloco ao alcance: abre bancada, fornalha, baú (a tela abre no tick seguinte). " +
+      "Depois de abrir uma bancada, craft aceita grade 3x3.",
+    inputSchema: { x: coord, y: coord, z: coord },
+    annotations: acts,
+  },
+  (args) => forward("use_block", args),
+);
+
+server.registerTool(
+  "craft",
+  {
+    title: "Craftar",
+    description:
+      "Crafta montando a grade como um jogador. grid = 4 casas (2x2, a grade do inventário, sem precisar de " +
+      "bancada) ou 9 (3x3, precisa de bancada aberta com use_block), em ordem de linha: nome do item " +
+      "('minecraft:log', 'minecraft:planks:0' ou o nome de exibição) ou null. times = quantas vezes. Use " +
+      "get_recipes antes: no GTNH as receitas mudam. Erros: missing_items, no_recipe, needs_table, grid_not_empty.",
+    inputSchema: {
+      grid: z.array(z.string().nullable()).min(4).max(9),
+      times: z.number().int().min(1).max(64).optional(),
+    },
+    annotations: acts,
+  },
+  (args) => forward("craft", args, 20000),
+);
+
+server.registerTool(
   "list_worlds",
   {
     title: "Mundos do single player",

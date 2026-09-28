@@ -65,6 +65,7 @@ public class JevBridgeMod {
         adapter = new Forge1710Adapter();
         core = new BridgeCore(adapter, log, Tags.VERSION);
         WorldControl.register(core);
+        Crafting.register(core);
         if (Loader.isModLoaded("NotEnoughItems")) {
             // Classe separada: sem NEI instalado, nenhuma classe do NEI é carregada.
             NeiIntegration.register(core);

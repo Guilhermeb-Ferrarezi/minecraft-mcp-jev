@@ -149,7 +149,16 @@ public final class Forge1710Adapter implements GameAdapter {
         } catch (RuntimeException ignored) {
             s.biome = null;
         }
-        s.gameMode = mc.playerController.isInCreativeMode() ? "creative" : "survival";
+        // O tipo de jogo do controlador (não só "criativo ou não"): o espectador do
+        // Et Futurum bloqueia pegar itens de slots, e a IA precisa enxergar isso.
+        net.minecraft.world.WorldSettings.GameType type = ReflectionHelper.getPrivateValue(
+            net.minecraft.client.multiplayer.PlayerControllerMP.class,
+            mc.playerController,
+            "currentGameType",
+            "field_78779_k");
+        s.gameMode = type == null ? "unknown"
+            : type.getName()
+                .toLowerCase(java.util.Locale.ROOT);
         s.onGround = p.onGround;
         s.inWater = p.isInWater();
         s.inLava = p.handleLavaMovement();
