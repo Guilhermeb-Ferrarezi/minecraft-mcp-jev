@@ -23,13 +23,26 @@ public class FakeGame implements GameAdapter {
     InputState input;
     boolean useHeld;
     int selected;
-    String held = "minecraft:dirt";
+    /** Hotbar (slots 0-8); o item da mão é hotbar[selected]. */
+    final String[] hotbar = new String[9];
+    {
+        hotbar[0] = "minecraft:dirt";
+    }
+    /** Jogo pausado (ESC no single player): nada se mexe. */
+    boolean paused;
+    /** Ticks restantes comendo/bebendo (usingItem do jogador). */
+    int usingItemTicks;
+    int eaten;
+    int usedInAir;
+    /** O botão direito segurado ativou o bloco na mira (abriu bancada/baú). */
+    boolean activatedBlock;
     boolean inWorld = true;
     int mineProgress;
     String mining;
     boolean collided;
     boolean attackHeld;
     boolean guiOpen;
+    boolean dead;
     /** Ticks segurando M1 para quebrar um bloco (o jogo real depende de dureza/ferramenta). */
     int ticksToBreak = 5;
 
@@ -62,7 +75,19 @@ public class FakeGame implements GameAdapter {
      * se não estiver, igual ao vanilla), depois a física.
      */
     public void physicsTick() {
+        if (paused) {
+            return;
+        }
         BlockInfo aim = guiOpen ? null : raytrace();
+        // Como o runTick: botão direito segurado sem estar usando item clica no que
+        // está na mira — numa bancada, abre a tela dela.
+        if (useHeld && usingItemTicks == 0 && aim != null && !guiOpen) {
+            activatedBlock = true;
+            guiOpen = true;
+        }
+        if (usingItemTicks > 0 && --usingItemTicks == 0) {
+            eaten++;
+        }
         if (attackHeld && aim != null) {
             String k = key(aim.x, aim.y, aim.z);
             if (!k.equals(mining)) {
@@ -167,16 +192,21 @@ public class FakeGame implements GameAdapter {
         s.collidedHorizontally = collided;
         s.selectedSlot = selected;
         s.guiOpen = guiOpen;
+        s.dead = dead;
         s.lookingAtBlock = guiOpen ? null : raytrace();
+        String held = held();
         s.heldItem = held == null ? null : new ItemInfo(selected, held, -1, held, 64, 0, 0);
+        s.usingItem = usingItemTicks > 0;
         return s;
     }
 
     @Override
     public List<ItemInfo> inventory() {
         List<ItemInfo> l = new ArrayList<ItemInfo>();
-        if (held != null) {
-            l.add(new ItemInfo(selected, held, -1, held, 64, 0, 0));
+        for (int i = 0; i < hotbar.length; i++) {
+            if (hotbar[i] != null) {
+                l.add(new ItemInfo(i, hotbar[i], -1, hotbar[i], 64, 0, 0));
+            }
         }
         return l;
     }
@@ -248,6 +278,7 @@ public class FakeGame implements GameAdapter {
 
     @Override
     public boolean useOnBlock(int bx, int by, int bz, int face, double hitX, double hitY, double hitZ) {
+        String held = held();
         if (held == null) {
             return false;
         }
@@ -259,6 +290,54 @@ public class FakeGame implements GameAdapter {
     @Override
     public void setUseHeld(boolean held) {
         useHeld = held;
+    }
+
+    String held() {
+        return hotbar[selected];
+    }
+
+    @Override
+    public boolean useHeldItem() {
+        String held = held();
+        if (held == null) {
+            return false;
+        }
+        usedInAir++;
+        if (held.contains("bread") || held.contains("apple")) {
+            usingItemTicks = 32;
+        }
+        return true;
+    }
+
+    @Override
+    public boolean isPaused() {
+        return paused;
+    }
+
+    /** Machado quebra tronco 4x mais rápido; picareta, pedra. */
+    @Override
+    public float breakSpeed(int slot, int bx, int by, int bz) {
+        String item = hotbar[slot], block = nameAt(bx, by, bz);
+        if (item == null) {
+            return 1f;
+        }
+        if (item.contains("_axe") && block.contains("log")) {
+            return 4f;
+        }
+        if (item.contains("pickaxe") && (block.contains("stone") || block.contains("ore"))) {
+            return 4f;
+        }
+        return 1f;
+    }
+
+    /** Pedra e minério só dropam com picareta. */
+    @Override
+    public boolean canHarvest(int slot, int bx, int by, int bz) {
+        String block = nameAt(bx, by, bz);
+        if (block.contains("stone") || block.contains("ore")) {
+            return hotbar[slot] != null && hotbar[slot].contains("pickaxe");
+        }
+        return true;
     }
 
     @Override
@@ -275,6 +354,24 @@ public class FakeGame implements GameAdapter {
     @Override
     public void sendChat(String message) {
         chat.add(message);
+    }
+
+    @Override
+    public void respawn() {
+        dead = false;
+        guiOpen = false;
+        x = 0.5;
+        y = GROUND + 1;
+        z = 0.5;
+    }
+
+    @Override
+    public String closeScreen() {
+        if (!guiOpen) {
+            return null;
+        }
+        guiOpen = false;
+        return "FakeScreen";
     }
 
     @Override

@@ -108,6 +108,56 @@ server.registerTool(
   (args) => forward("find_blocks", args, 30000),
 );
 
+server.registerTool(
+  "respawn",
+  {
+    title: "Renascer",
+    description:
+      "Renasce depois de morrer (o botão Respawn da tela de morte). O jogador volta no ponto de spawn, sem o " +
+      "inventário (que fica no chão onde morreu). Responde wasDead=false se não estava morto.",
+    annotations: acts,
+  },
+  () => forward("respawn"),
+);
+
+server.registerTool(
+  "close_screen",
+  {
+    title: "Fechar tela",
+    description:
+      "Fecha a tela aberta no jogo (inventário, bancada, baú, menu do ESC). Use quando uma ação falhar com gui_open. " +
+      "Responde closed = nome da tela fechada, ou null se não havia nenhuma.",
+    annotations: acts,
+  },
+  () => forward("close_screen"),
+);
+
+server.registerTool(
+  "list_worlds",
+  {
+    title: "Mundos do single player",
+    description:
+      "Lista os mundos salvos (folder, name, modo de jogo) e se o jogador já está num mundo. Funciona no menu " +
+      "principal. Use antes de open_world.",
+    annotations: readOnly,
+  },
+  () => forward("list_worlds"),
+);
+
+server.registerTool(
+  "open_world",
+  {
+    title: "Abrir mundo",
+    description:
+      "Abre um mundo do single player pelo nome ou pasta (de list_worlds), sem passar pelo menu. Responde na hora " +
+      "com status loading; o carregamento do GTNH leva de 30 s a alguns minutos — chame get_state até parar de dar " +
+      "not_in_world. Falha com already_in_world se já estiver jogando.",
+    inputSchema: { name: z.string().min(1).describe("nome ou pasta do mundo") },
+    annotations: acts,
+  },
+  (args) => forward("open_world", args),
+);
+
 /** Métodos do NEI só existem se o NEI estiver instalado no cliente. */
 async function forwardNei(method: string, params: Record<string, unknown>): Promise<ToolResult> {
   const r = await forward(method, params, 60000);
@@ -261,8 +311,9 @@ server.registerTool(
       "Anda até (x, y, z) com pathfinding: contorna obstáculos, sobe degraus de 1 bloco, desce até 3, evita lava. " +
       "Não quebra nem coloca blocos, não sobe escadas de mão e não atravessa paredes. y é a altura dos PÉS no destino " +
       "(o bloco de ar em cima do chão). range = a quantos blocos do alvo já conta como chegada (padrão 1; use 2-3 " +
-      "para chegar perto de um bloco sólido que quer minerar). Responde quando chega ou falha " +
-      "(status done / failed com reason unreachable / timeout).",
+      "para chegar perto de um bloco sólido que quer minerar). Responde quando chega (status done, com distance = " +
+      "distância final até o alvo) ou falha (failed com reason unreachable / timeout). Com o jogo pausado (ESC) a " +
+      "caminhada congela e o tempo não conta.",
     inputSchema: {
       x: coord,
       y: coord,
@@ -281,13 +332,15 @@ server.registerTool(
   {
     title: "Quebrar bloco",
     description:
-      "Quebra o bloco em (x, y, z) com o item da mão. Precisa estar ao alcance (~4,5 blocos do olho); senão responde " +
-      "too_far. No GTNH, sem a ferramenta certa o bloco pode demorar muito ou não dropar nada: equipe a ferramenta " +
-      "com select_slot antes.",
+      "Quebra o bloco em (x, y, z). Precisa estar ao alcance (~4,5 blocos do olho); senão responde too_far. Antes " +
+      "de quebrar troca sozinho para o item da hotbar que faz o bloco dropar e quebra mais rápido (no GTNH, pedra e " +
+      "minério com a ferramenta errada não dropam nada). A resposta traz tool (slot/item usado) e canHarvest; " +
+      "canHarvest=false quer dizer que nada da hotbar serve e o bloco provavelmente não dropou.",
     inputSchema: {
       x: coord,
       y: coord,
       z: coord,
+      autoTool: z.boolean().optional().describe("trocar sozinho para a melhor ferramenta da hotbar; padrão true"),
       timeoutSeconds: z.number().min(1).max(120).optional().describe("padrão 30"),
     },
     annotations: { ...acts, destructiveHint: true },
@@ -313,8 +366,9 @@ server.registerTool(
   {
     title: "Usar item da mão",
     description:
-      "Segura o botão direito por N ticks (20 ticks = 1 s) mirando para onde está olhando: comer/beber (~32 ticks), " +
-      "puxar arco, usar item. Para interagir com um bloco, use look_at nele antes.",
+      "Usa o item da mão no ar por até N ticks (20 ticks = 1 s): comer/beber (~32 ticks), puxar arco, jogar pérola. " +
+      "Nunca ativa o bloco ou a entidade na mira (não abre bancada/baú por engano). Termina sozinho quando o uso " +
+      "acaba (finished=true, ex.: comeu tudo); falha com empty_hand, not_usable ou gui_open.",
     inputSchema: { ticks: z.number().int().min(1).max(200).optional().describe("padrão 40") },
     annotations: acts,
   },

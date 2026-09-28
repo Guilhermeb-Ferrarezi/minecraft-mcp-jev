@@ -64,6 +64,7 @@ public class JevBridgeMod {
         }
         adapter = new Forge1710Adapter();
         core = new BridgeCore(adapter, log, Tags.VERSION);
+        WorldControl.register(core);
         if (Loader.isModLoaded("NotEnoughItems")) {
             // Classe separada: sem NEI instalado, nenhuma classe do NEI é carregada.
             NeiIntegration.register(core);
@@ -88,6 +89,8 @@ public class JevBridgeMod {
         if (event.phase != TickEvent.Phase.END || core == null) {
             return;
         }
+        // Fora de core.tick(): abrir um mundo trava a thread até o servidor subir.
+        WorldControl.runPending();
         Minecraft mc = Minecraft.getMinecraft();
         boolean hasClient = core.hasClient();
         if (mc.thePlayer != null) {

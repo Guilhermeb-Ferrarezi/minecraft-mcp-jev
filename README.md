@@ -12,23 +12,27 @@ Minecraft + mod JevBridge  ◄── TCP 127.0.0.1:25599, JSON por linha + token
 |---|---|
 | `core/` | núcleo independente de versão: protocolo, servidor TCP, config, pathfinding A*, ações (andar, minerar, colocar, usar item). Testes com um mundo falso. |
 | `mods/forge-1.7.10/` | adaptador fino para 1.7.10 (template oficial da GTNH). Compila o `core/` junto e gera o `.jar`. |
-| `bridge/` | servidor MCP (stdio) com 21 ferramentas (3 do NEI), e o agente que joga sozinho com o Jev (`bridge/src/agent/`). |
+| `bridge/` | servidor MCP (stdio) com 25 ferramentas (3 do NEI), e o agente que joga sozinho com o Jev (`bridge/src/agent/`). |
 | `docs/PROTOCOL.md` | protocolo entre o mod e o servidor MCP. |
 
 ## Estado
 
-**Funciona e está testado sem o jogo:** o núcleo (20 testes) e o caminho completo
-cliente MCP → servidor MCP → TCP → núcleo (teste ponta a ponta com mundo falso).
-O mod compila contra o Minecraft 1.7.10 + Forge reais e o jar sai em bytecode Java 8.
+**Testado sem o jogo:** o núcleo (36 testes) e o caminho completo cliente MCP →
+servidor MCP → TCP → núcleo (teste ponta a ponta com mundo falso). O mod compila
+contra o Minecraft 1.7.10 + Forge reais e o jar sai em bytecode Java 8.
 
-**Ainda não testado no jogo de verdade.** O adaptador 1.7.10 compila, mas o
-comportamento dentro do GTNH (pathfinding real, mineração, nomes dos minérios do
-GregTech) precisa ser validado rodando a instância. Espere ajustes.
+**Testado no GTNH 2.8.4 de verdade (single player):** abrir o mundo pelo mod
+(`open_world`), estado/inventário, `find_blocks`, andar com pathfinding, quebrar
+tronco trocando sozinho para o machado da hotbar, pegar o item do chão, colocar
+bloco, comer olhando para uma bancada sem abri-la, fechar tela, renascer depois
+de morrer, e receitas/busca do NEI. Ainda não testados no jogo: pausa com ESC
+(coberta pelo teste do núcleo), minério do GregTech e o agente com o Jev.
 
 **Integração com o NEI:** a IA consulta receitas (tecla R), usos (tecla U) e
 procura itens, incluindo máquinas do GregTech com EU/t e duração. Compilado
 contra o NEI 2.8.44 do GTNH 2.8.4 e com os nomes de campo do GT 5.09.51.482
-conferidos; ainda não rodado no jogo.
+conferidos. Só responde depois que o NEI carrega a lista de itens (ao entrar
+num mundo); antes disso dá `not_ready`, nunca "0 receitas".
 
 **Fora do escopo por enquanto:** executar crafting e mexer em baús/fornalhas/
 máquinas (qualquer GUI). A IA já *sabe* a receita pelo NEI, mas ainda não
@@ -42,15 +46,24 @@ consegue *fazer* — no GTNH é isso que faz o jogo progredir.
    ./gradlew build
    ```
    Use o `build/libs/jevbridge-<versão>.jar` (não o `-dev` nem o `-sources`).
+   Se o build reclamar que o toolchain 25 "não tem javac" (o download automático
+   pelo foojay pode trazer um JDK 21 no lugar do 25), baixe um JDK 25 (ex.:
+   Temurin) e aponte para ele:
+   `./gradlew build -Porg.gradle.java.installations.paths=/caminho/do/jdk-25`.
 2. Copie para a pasta `mods/` da instância do GTNH e abra o jogo uma vez. O mod
    cria `config/jevbridge.properties` com um token aleatório:
    ```properties
-   bind=127.0.0.1        # só esta máquina; não exponha na rede
+   # só esta máquina; não exponha na rede
+   bind=127.0.0.1
    port=25599
-   token=…               # quem tem o token controla o seu jogador
-   allowCommands=false   # true deixa a IA usar /comandos no chat
+   # quem tem o token controla o seu jogador
+   token=…
+   # true deixa a IA usar /comandos no chat
+   allowCommands=false
    enabled=true
    ```
+   (Comentário na mesma linha do valor, como `port=25599  # porta`, também é
+   aceito: o mod corta o ` #...`.)
    É mod só de cliente: entra em servidores que não têm o mod.
 3. Compile o servidor MCP:
    ```sh
@@ -98,10 +111,14 @@ Usa a mesma API do quiz-jev (`/quiz/answer`, chave `qz_...`), sem endpoint novo:
 3. **A skill se vira com os parâmetros** a partir do estado (o bloco-alvo mais
    perto, o mob hostil mais perto, a comida da hotbar) e executa pelo mod.
 
-Skills: ir até o alvo, quebrar o alvo, pegar itens do chão, atacar, fugir,
-comer, explorar, repensar o plano, objetivo cumprido. O que o agente consegue
-fazer é limitado a esse menu — para ele craftar, por exemplo, precisa existir a
-skill (e o mod ainda não mexe em GUI).
+Skills do menu: ir até o alvo, quebrar o alvo, pegar itens do chão, atacar,
+explorar (só sem alvo à vista), repensar o plano, objetivo cumprido — no máximo
+5 por passo (o `/quiz/answer` aceita até 9, e com menos o Jev escolhe melhor).
+Comer (fome ≤ 14) e fugir (vida ≤ 8 com hostil a até 6 blocos) são reflexos:
+rodam por regra, sem gastar escolha nem LLM. Um bloco-alvo em que ir até/quebrar
+já falhou não volta a ser oferecido. O que o agente consegue fazer é limitado a
+esse menu — para ele craftar, por exemplo, precisa existir a skill (e o mod
+ainda não mexe em GUI).
 
 Limites: `--max-steps` (padrão 200) e `--max-llm` (padrão 30, conta planos e
 escaladas — é o que custa). Ctrl+C para o agente e solta o jogador.
@@ -128,8 +145,14 @@ contra Gson 2.2.4 e Java 8 — o mínimo que existe no 1.7.10 — para rodar em 
 
 - **Pathfinding** anda, sobe 1 bloco, desce até 3 e evita lava. Não quebra nem
   coloca blocos no caminho, não sobe escada de mão, não nada longas distâncias.
-- **Minerar sem a ferramenta certa** no GTNH é lento ou não dropa; a IA precisa
-  equipar a ferramenta (`select_slot`) antes.
+- **Ferramenta:** `mine_block` troca sozinho para o item da hotbar que faz o bloco
+  dropar e quebra mais rápido; se nada serve, responde `canHarvest: false` (no
+  GTNH pedra e minério não dropam com a ferramenta errada). Só olha a hotbar,
+  não o inventário.
+- **Pausa:** com o menu do ESC aberto a ação em andamento congela (não anda, não
+  conta tempo) e continua quando o menu fecha.
+- **Pedidos durante o carregamento do jogo** (antes do menu principal) ficam na
+  fila até o primeiro tick e podem estourar o prazo de 15 s do servidor MCP.
 - **Rotação instantânea da câmera**: servidores com anti-cheat podem reclamar.
   Pensado para single player ou servidor próprio — automação pode violar regras
   de servidores públicos.

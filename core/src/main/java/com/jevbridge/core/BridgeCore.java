@@ -31,7 +31,7 @@ public final class BridgeCore implements BridgeServer.Handler {
     static final List<String> METHODS = Collections.unmodifiableList(Arrays.asList(
             "hello", "status", "get_state", "get_inventory", "get_block", "get_blocks", "find_blocks",
             "get_entities", "look", "look_at", "select_slot", "chat", "attack", "stop",
-            "walk_to", "mine_block", "place_block", "use_item", "move"));
+            "walk_to", "mine_block", "place_block", "use_item", "move", "close_screen", "respawn"));
 
     private final GameAdapter game;
     private final BridgeLog log;
@@ -45,6 +45,7 @@ public final class BridgeCore implements BridgeServer.Handler {
     private Action current;
     private boolean wasDead;
     private boolean wasInWorld;
+    private boolean pausedAction;
 
     public BridgeCore(GameAdapter game, BridgeLog log, String modVersion) {
         this.game = game;
@@ -190,6 +191,19 @@ public final class BridgeCore implements BridgeServer.Handler {
             }
         }
 
+        if (current != null && inWorld && game.isPaused()) {
+            // ESC pausa o Jev junto com o jogo: solta os controles e congela o
+            // relógio da ação; no primeiro tick depois da pausa ela reaplica tudo.
+            if (!pausedAction) {
+                pausedAction = true;
+                game.setInput(InputState.NONE);
+                game.setAttackHeld(false);
+                game.setUseHeld(false);
+            }
+            return;
+        }
+        pausedAction = false;
+
         if (current != null) {
             Action a = current;
             JsonObject result = a.tick(game);
@@ -309,6 +323,18 @@ public final class BridgeCore implements BridgeServer.Handler {
             JsonObject o = new JsonObject();
             o.add("heldItem", Json.item(game.player().heldItem));
             r.respond(o);
+        } else if ("respawn".equals(m)) {
+            JsonObject o = new JsonObject();
+            o.addProperty("wasDead", me.dead);
+            if (me.dead) {
+                game.respawn();
+            }
+            r.respond(o);
+        } else if ("close_screen".equals(m)) {
+            JsonObject o = new JsonObject();
+            String closed = game.closeScreen();
+            o.addProperty("closed", closed);
+            r.respond(o);
         } else if ("chat".equals(m)) {
             chat(r, Json.requireString(p, "message"));
         } else if ("attack".equals(m)) {
@@ -319,7 +345,7 @@ public final class BridgeCore implements BridgeServer.Handler {
                     Json.requireInt(p, "z"), range, Json.getBool(p, "sprint", false), Action.timeoutFrom(p, 60, 300)));
         } else if ("mine_block".equals(m)) {
             startAction(new Actions.MineBlock(r, Json.requireInt(p, "x"), Json.requireInt(p, "y"),
-                    Json.requireInt(p, "z"), Action.timeoutFrom(p, 30, 120)));
+                    Json.requireInt(p, "z"), Json.getBool(p, "autoTool", true), Action.timeoutFrom(p, 30, 120)));
         } else if ("place_block".equals(m)) {
             startAction(new Actions.PlaceBlock(r, Json.requireInt(p, "x"), Json.requireInt(p, "y"), Json.requireInt(p, "z")));
         } else if ("use_item".equals(m)) {

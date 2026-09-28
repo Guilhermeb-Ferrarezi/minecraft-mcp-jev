@@ -37,7 +37,7 @@ Um novo `hello` válido derruba o cliente anterior — só um controla o jogador
 | método | params | resultado |
 |---|---|---|
 | `status` | — | `inWorld`, `busyWith` |
-| `get_state` | — | posição (pés), `blockPosition`, yaw/pitch, vida, fome, item na mão, dimensão, bioma, hora, mira |
+| `get_state` | — | posição (pés), `blockPosition`, yaw/pitch, vida, fome, item na mão, `usingItem`, `guiOpen`, `dead`, dimensão, bioma, hora, mira |
 | `get_inventory` | — | `selectedSlot`, `items[]` (slot 0-8 hotbar, 9-35, 36-39 armadura) |
 | `get_block` | `x,y,z` | bloco |
 | `get_blocks` | `radius` ≤ 6 | blocos não-ar num cubo |
@@ -49,11 +49,16 @@ Um novo `hello` válido derruba o cliente anterior — só um controla o jogador
 | `chat` | `message` ≤ 100 | — (`/comandos` só com `allowCommands=true`) |
 | `attack` | `entityId` | `done` ou `failed` (`too_far`, `not_found`) |
 | `stop` | — | `stopped` |
-| `walk_to` | `x,y,z`, `range`=1, `sprint`, `timeoutSeconds` ≤ 300 | ação; `unreachable` quando não há caminho |
-| `mine_block` | `x,y,z`, `timeoutSeconds` ≤ 120 | ação: mira e segura M1 até o bloco sumir (o jogo decide velocidade e drop); `too_far`, `unbreakable`, `liquid`, `obstructed` (bloco sólido na frente, vem em `blockInTheWay`), `gui_open` |
+| `walk_to` | `x,y,z`, `range`=1, `sprint`, `timeoutSeconds` ≤ 300 | ação; `done` traz `distance` (final, até o centro do bloco-alvo); `unreachable` quando não há caminho |
+| `mine_block` | `x,y,z`, `autoTool`=true, `timeoutSeconds` ≤ 120 | ação: troca para o melhor item da hotbar (primeiro o que faz dropar, depois o mais rápido), mira e segura M1 até o bloco sumir; `done` traz `tool` (`slot`, `displayName`) e `canHarvest` (false = nada da hotbar faz dropar); `too_far`, `unbreakable`, `liquid`, `obstructed` (bloco sólido na frente, vem em `blockInTheWay`), `gui_open` |
 | `place_block` | `x,y,z` | ação; `empty_hand`, `occupied`, `inside_player`, `no_support`, `too_far` |
-| `use_item` | `ticks` ≤ 200 | ação (segura botão direito) |
+| `use_item` | `ticks` ≤ 200 | ação: usa o item no ar (nunca ativa bloco/entidade na mira) e segura enquanto o uso dura; `done` com `finished` (o uso acabou sozinho, ex.: comeu); `empty_hand`, `not_usable`, `gui_open` |
 | `move` | `forward`, `strafe`, `jump`, `sneak`, `sprint`, `ticks` ≤ 200 | ação |
+| `close_screen` | — | `closed` = nome da tela fechada (inventário, bancada, baú, menu do ESC) ou null |
+| `respawn` | — | `wasDead`; renasce se estava morto (botão da tela de morte) |
+
+Com o jogo pausado (menu do ESC) a ação em andamento congela: controles soltos,
+relógio do timeout parado; ela continua quando o menu fecha.
 
 ### Extensões (só se o mod opcional estiver instalado; aparecem em `methods` do hello)
 
@@ -65,6 +70,14 @@ mesmo fora de um mundo. Erro `not_ready` enquanto o NEI carrega a lista de itens
 | `search_items` | `query`, `limit` ≤ 50 | itens do modpack cujo nome/id contém `query` |
 | `get_recipes` | `item`, `limit` ≤ 20, `handler` | receitas que produzem o item (tecla R do NEI) |
 | `get_usages` | `item`, `limit` ≤ 20, `handler` | receitas que usam o item (tecla U do NEI) |
+
+Do adaptador 1.7.10 (sempre presentes nele; rodam na thread do jogo e funcionam
+no menu principal):
+
+| método | params | resultado |
+|---|---|---|
+| `list_worlds` | — | `inWorld`, `worlds[]` (`folder`, `name`, `lastPlayed`, `gameMode`, `hardcore`) |
+| `open_world` | `name` (nome ou pasta) | `status: loading` na hora; o mundo abre no tick seguinte — acompanhe por `status`/`joined_world`. `already_in_world`, `not_found`, `busy`, `cannot_load` |
 
 `item` é o nome de exibição ("Iron Pickaxe"; sem nome exato, o mais curto que
 contém o texto) ou o id (`minecraft:iron_pickaxe[:meta]`). Cada receita:

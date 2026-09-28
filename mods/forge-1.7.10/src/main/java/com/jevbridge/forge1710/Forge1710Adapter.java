@@ -9,6 +9,9 @@ import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityClientPlayerMP;
+import net.minecraft.client.gui.GuiIngameMenu;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.Entity;
@@ -33,6 +36,8 @@ import com.jevbridge.core.GameAdapter;
 import com.jevbridge.core.InputState;
 import com.jevbridge.core.ItemInfo;
 import com.jevbridge.core.PlayerSnapshot;
+
+import cpw.mods.fml.relauncher.ReflectionHelper;
 
 /**
  * Tradução do {@link GameAdapter} para o Minecraft 1.7.10 (Forge 10.13, nomes MCP).
@@ -72,6 +77,12 @@ public final class Forge1710Adapter implements GameAdapter {
         return mc.theWorld != null && mc.thePlayer != null;
     }
 
+    /** Single player pausa de verdade; no multiplayer o menu do ESC também conta como "pausar o Jev". */
+    @Override
+    public boolean isPaused() {
+        return mc.isGamePaused() || mc.currentScreen instanceof GuiIngameMenu;
+    }
+
     /** Chamado a cada tick: o objeto do jogador é recriado ao morrer/trocar de dimensão. */
     void ensureInputHook() {
         EntityClientPlayerMP p = mc.thePlayer;
@@ -92,6 +103,7 @@ public final class Forge1710Adapter implements GameAdapter {
         // Reafirma os botões todo tick: abrir uma tela solta todas as teclas.
         if (useHeld) {
             KeyBinding.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), true);
+            holdOffRightClickRepeat();
         }
         if (attackHeld) {
             holdAttack();
@@ -144,6 +156,7 @@ public final class Forge1710Adapter implements GameAdapter {
         s.collidedHorizontally = p.isCollidedHorizontally;
         s.dead = p.isDead || p.getHealth() <= 0;
         s.selectedSlot = p.inventory.currentItem;
+        s.usingItem = p.isUsingItem();
         s.guiOpen = mc.currentScreen != null;
         s.heldItem = item(p.inventory.currentItem, p.getHeldItem());
         s.worldTime = w.getWorldTime();
@@ -419,16 +432,94 @@ public final class Forge1710Adapter implements GameAdapter {
         return used;
     }
 
+    /**
+     * Só o estado "segurado", sem {@code KeyBinding.onTick}: o onTick vira um
+     * clique no próximo runTick, e o clique do vanilla ativa o bloco na mira
+     * (bancada, baú) antes de usar o item. O uso começa em {@link #useHeldItem}.
+     */
     @Override
     public void setUseHeld(boolean held) {
         if (held == useHeld) {
             return;
         }
         useHeld = held;
-        int key = mc.gameSettings.keyBindUseItem.getKeyCode();
-        KeyBinding.setKeyBindState(key, held);
+        KeyBinding.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), held);
         if (held) {
-            KeyBinding.onTick(key);
+            holdOffRightClickRepeat();
+        }
+    }
+
+    /**
+     * Com o botão direito segurado e o jogador sem usar item, o runTick repete o
+     * clique quando {@code rightClickDelayTimer} chega a 0 — e o clique do vanilla
+     * ativa o bloco na mira. O fim de "comer" chega por pacote antes da leitura
+     * dos botões, então sempre sobra um tick com o botão segurado e o uso já
+     * encerrado: sem isto, comer olhando para uma bancada abre a bancada no fim.
+     * Mantém o contador acima de 0 enquanto o bot segura o botão.
+     */
+    private void holdOffRightClickRepeat() {
+        try {
+            ReflectionHelper.setPrivateValue(Minecraft.class, mc, 4, "rightClickDelayTimer", "field_71467_ac");
+        } catch (RuntimeException e) {
+            // Campo renomeado por algum mod: sem a trava, o uso ainda funciona.
+        }
+    }
+
+    /** O mesmo caminho do clique direito no ar do vanilla (sem bloco nem entidade na mira). */
+    @Override
+    public boolean useHeldItem() {
+        EntityClientPlayerMP p = mc.thePlayer;
+        ItemStack held = p.inventory.getCurrentItem();
+        if (held == null) {
+            return false;
+        }
+        boolean used = mc.playerController.sendUseItem(p, mc.theWorld, held);
+        if (used) {
+            mc.entityRenderer.itemRenderer.resetEquippedProgress2();
+        }
+        return used || p.isUsingItem();
+    }
+
+    @Override
+    public float breakSpeed(int slot, int x, int y, int z) {
+        ItemStack stack = mc.thePlayer.inventory.mainInventory[slot];
+        if (stack == null || stack.getItem() == null) {
+            return 1f;
+        }
+        Block b = mc.theWorld.getBlock(x, y, z);
+        int meta = mc.theWorld.getBlockMetadata(x, y, z);
+        try {
+            // getDigSpeed é do Forge: as ferramentas do GregTech respondem por ele.
+            return stack.getItem()
+                .getDigSpeed(stack, b, meta);
+        } catch (RuntimeException e) {
+            return stack.func_150997_a(b);
+        }
+    }
+
+    /** Mesma regra do {@code ForgeHooks.canHarvestBlock}, mas para um slot qualquer da hotbar. */
+    @Override
+    public boolean canHarvest(int slot, int x, int y, int z) {
+        ItemStack stack = mc.thePlayer.inventory.mainInventory[slot];
+        Block b = mc.theWorld.getBlock(x, y, z);
+        int meta = mc.theWorld.getBlockMetadata(x, y, z);
+        try {
+            if (b.getMaterial()
+                .isToolNotRequired()) {
+                return true;
+            }
+            String tool = b.getHarvestTool(meta);
+            if (stack == null || stack.getItem() == null || tool == null) {
+                return stack != null && stack.func_150998_b(b);
+            }
+            int level = stack.getItem()
+                .getHarvestLevel(stack, tool);
+            if (level < 0) {
+                return stack.func_150998_b(b);
+            }
+            return level >= b.getHarvestLevel(meta);
+        } catch (RuntimeException e) {
+            return true; // na dúvida não impede a escolha; a quebra real decide
         }
     }
 
@@ -454,6 +545,30 @@ public final class Forge1710Adapter implements GameAdapter {
             return;
         }
         mc.thePlayer.sendChatMessage(message);
+    }
+
+    /** O mesmo que o botão da GuiGameOver. */
+    @Override
+    public void respawn() {
+        mc.thePlayer.respawnPlayer();
+        mc.displayGuiScreen(null);
+    }
+
+    @Override
+    public String closeScreen() {
+        GuiScreen screen = mc.currentScreen;
+        if (screen == null) {
+            return null;
+        }
+        String name = screen.getClass()
+            .getSimpleName();
+        if (screen instanceof GuiContainer && mc.thePlayer != null) {
+            mc.thePlayer.closeScreen(); // avisa o servidor: devolve o que estava na grade da bancada
+        } else {
+            mc.displayGuiScreen(null);
+        }
+        mc.setIngameFocus();
+        return name;
     }
 
     @Override

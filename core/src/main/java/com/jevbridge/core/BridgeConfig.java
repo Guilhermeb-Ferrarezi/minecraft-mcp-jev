@@ -53,6 +53,7 @@ public final class BridgeConfig {
                 closeQuietly(in);
             }
         }
+        stripInlineComments(p);
         boolean changed = false;
         if (p.getProperty("token", "").trim().length() < 16) {
             p.setProperty("token", randomToken());
@@ -97,6 +98,28 @@ public final class BridgeConfig {
         return new BridgeConfig(p.getProperty("bind").trim(), port, p.getProperty("token").trim(),
                 !"false".equalsIgnoreCase(p.getProperty("enabled").trim()),
                 "true".equalsIgnoreCase(p.getProperty("allowCommands").trim()), file);
+    }
+
+    /**
+     * O formato .properties só aceita comentário em linha própria: em
+     * "port=25599  # porta" o valor seria "25599  # porta". Quem copia um exemplo
+     * comentado não deve ficar com a porta fechada, então corta " #..." do valor.
+     */
+    static void stripInlineComments(Properties p) {
+        for (String key : p.stringPropertyNames()) {
+            String v = p.getProperty(key);
+            int cut = -1;
+            for (int i = 1; i < v.length(); i++) {
+                char c = v.charAt(i);
+                if ((c == '#' || c == '!') && Character.isWhitespace(v.charAt(i - 1))) {
+                    cut = i;
+                    break;
+                }
+            }
+            if (cut > 0) {
+                p.setProperty(key, v.substring(0, cut).trim());
+            }
+        }
     }
 
     private static String randomToken() {

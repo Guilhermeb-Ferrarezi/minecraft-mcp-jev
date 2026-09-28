@@ -29,7 +29,12 @@ export interface Memory {
   target: string | null;
   history: string[];
   failStreak: Map<string, number>;
+  /** Blocos-alvo ("x,y,z") em que ir até/quebrar já falhou: não voltam como alvo. */
+  badTargets: Set<string>;
 }
+
+/** Teto do /quiz/answer é 9 alternativas; com menos o Jev escolhe melhor. */
+export const MAX_MENU = 5;
 
 export interface Skill {
   id: string;
@@ -96,6 +101,35 @@ export function summarizeRecipes(data: Json): string {
 
 const MAX_RECIPE_LOOKUPS = 2;
 
+const STOPWORDS = new Set(
+  (
+    "the a an bot player should must would could need needs to of in on at for from with and or then now first it is be " +
+    "find search look looking break mine dig collect get gather go walk some any nearest closest near block blocks " +
+    "keyword word answer target item items minecraft i we you they this that its type kind " +
+    "o os as de do da dos das um uma uns umas e ou para pra com no na nos nas bloco blocos alvo resposta agora mais " +
+    "perto procurar quebrar minerar pegar coletar palavra chave tipo"
+  ).split(" "),
+);
+
+/**
+ * Palavras candidatas a alvo na resposta do LLM, na ordem em que aparecem
+ * (entre aspas/crases primeiro). Tira palavras de enchimento: "The bot should
+ * find log" vira ["log"], não ["the"]. Lista vazia = objetivo cumprido/nada a
+ * procurar.
+ */
+export function targetCandidates(answer: string): string[] {
+  const text = answer.toLowerCase();
+  const words = (t: string) => t.match(/[a-z_]+/g) ?? [];
+  if (words(text).length <= 3 && /\bpronto\b|\bdone\b/.test(text)) return [];
+  const quoted = [...text.matchAll(/["'`“”‘’]([^"'`“”‘’]+)["'`“”‘’]/g)].flatMap((m) => words(m[1]));
+  const out: string[] = [];
+  for (const w of [...quoted, ...words(text)]) {
+    if (w.length < 2 || STOPWORDS.has(w) || w === "pronto" || w === "receita" || out.includes(w)) continue;
+    out.push(w);
+  }
+  return out.slice(0, 4);
+}
+
 /**
  * Pergunta ao LLM qual bloco procurar para o objetivo. Se o NEI estiver
  * disponível, o LLM pode pedir antes a receita de um item ("receita: X"); a
@@ -131,14 +165,25 @@ async function planTarget(o: Observation, m: Memory, ctx: SkillContext): Promise
       m.history.push(`consultou receita de ${wanted}`);
       continue;
     }
-    const word = answer.toLowerCase().match(/[a-z_]+/)?.[0] ?? "";
-    if (!word || word === "pronto" || word === "receita") {
+    const candidates = targetCandidates(answer);
+    if (!candidates.length) {
       m.target = null;
       return "LLM acha que não há bloco a procurar";
     }
+    // Primeiro candidato que existe por perto; se nenhum existe, fica o primeiro
+    // (o menu oferece explorar).
+    let word = candidates[0];
+    let total = 0;
+    for (const c of candidates) {
+      const found: Json = await call(ctx, "find_blocks", { query: c, radius: 32, verticalRadius: 16, limit: 1 });
+      if (found.totalMatches > 0) {
+        word = c;
+        total = found.totalMatches;
+        break;
+      }
+    }
     m.target = word;
-    const found: Json = await call(ctx, "find_blocks", { query: word, radius: 32, verticalRadius: 16, limit: 1 });
-    return `novo alvo: "${word}" (${found.totalMatches} por perto)${recipes.length ? `, depois de ver ${recipes.length} receita(s)` : ""}`;
+    return `novo alvo: "${word}" (${total} por perto)${recipes.length ? `, depois de ver ${recipes.length} receita(s)` : ""}`;
   }
 }
 
@@ -147,9 +192,10 @@ export const SKILLS: Skill[] = [
     id: "go_to_target",
     label: (o, m) => `Ir até o ${m.target} mais próximo (${o.targets[0].distance} blocos)`,
     available: (o) => o.targets.length > 0 && o.targets[0].distance > 4,
-    async run(o, _m, ctx) {
+    async run(o, m, ctx) {
       const t = o.targets[0];
       const r = await call(ctx, "walk_to", { x: t.x, y: t.y, z: t.z, range: 2, timeoutSeconds: 45 }, 60000);
+      if (r.status !== "done") m.badTargets.add(`${t.x},${t.y},${t.z}`);
       return describeAction(r);
     },
   },
@@ -157,10 +203,15 @@ export const SKILLS: Skill[] = [
     id: "mine_target",
     label: (o) => `Quebrar o ${o.targets[0].displayName} ao alcance`,
     available: (o) => o.targets.length > 0 && o.targets[0].distance <= 4.5,
-    async run(o, _m, ctx) {
+    async run(o, m, ctx) {
       const t = o.targets[0];
       const r = await call(ctx, "mine_block", { x: t.x, y: t.y, z: t.z, timeoutSeconds: 40 }, 55000);
-      return r.status === "done" ? `quebrou ${r.broke ?? t.displayName}` : describeAction(r);
+      if (r.status !== "done") {
+        m.badTargets.add(`${t.x},${t.y},${t.z}`);
+        return describeAction(r);
+      }
+      const tool = r.tool?.displayName ? ` com ${r.tool.displayName}` : "";
+      return `quebrou ${r.broke ?? t.displayName}${tool}${r.canHarvest === false ? " (sem drop: ferramenta errada)" : ""}`;
     },
   },
   {
@@ -209,43 +260,10 @@ export const SKILLS: Skill[] = [
     },
   },
   {
-    id: "flee",
-    label: (o) => `Fugir de ${hostiles(o)[0].name}`,
-    available: (o) => hostiles(o).length > 0,
-    async run(o, _m, ctx) {
-      const me = o.state.position;
-      const h = hostiles(o)[0];
-      const dx = me.x - h.x;
-      const dz = me.z - h.z;
-      const len = Math.hypot(dx, dz) || 1;
-      const x = Math.floor(me.x + (dx / len) * 14);
-      const z = Math.floor(me.z + (dz / len) * 14);
-      const r = await call(
-        ctx,
-        "walk_to",
-        { x, y: o.state.blockPosition.y, z, range: 4, sprint: true, timeoutSeconds: 12 },
-        25000,
-      );
-      return describeAction(r);
-    },
-  },
-  {
-    id: "eat",
-    label: (o) => `Comer ${hotbarFood(o)!.displayName} (fome ${o.state.food}/20)`,
-    available: (o) => o.state.food < 18 && hotbarFood(o) !== undefined,
-    async run(o, _m, ctx) {
-      const food = hotbarFood(o)!;
-      const previous = o.state.selectedSlot;
-      await call(ctx, "select_slot", { slot: food.slot });
-      await call(ctx, "use_item", { ticks: 40 }, 20000);
-      await call(ctx, "select_slot", { slot: previous });
-      return `comeu ${food.displayName}`;
-    },
-  },
-  {
     id: "explore",
     label: () => "Explorar: andar uns 20 blocos numa direção nova",
-    available: () => true,
+    // Com alvo à vista explorar só atrapalha; e mantém o menu em até 5 opções.
+    available: (o) => o.targets.length === 0,
     async run(o, _m, ctx) {
       const me = o.state.blockPosition;
       const angle = Math.random() * Math.PI * 2;
@@ -267,6 +285,48 @@ export const SKILLS: Skill[] = [
     label: () => "O objetivo já foi cumprido",
     available: () => true,
     run: async () => DONE,
+  },
+];
+
+/**
+ * Reflexos: rodam por regra, antes do Jev escolher, sem gastar escolha nem LLM.
+ * Um jogador não "decide" comer com fome 6 ou fugir com 3 corações.
+ */
+export const REFLEXES: Skill[] = [
+  {
+    id: "flee",
+    label: (o) => `Fugir de ${hostiles(o)[0].name}`,
+    // Só com pouca vida e o hostil perto; com vida cheia o menu oferece atacar.
+    available: (o) => o.state.health <= 8 && hostiles(o).some((h) => h.distance <= 6),
+    async run(o, _m, ctx) {
+      const me = o.state.position;
+      const h = hostiles(o)[0];
+      const dx = me.x - h.x;
+      const dz = me.z - h.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const x = Math.floor(me.x + (dx / len) * 14);
+      const z = Math.floor(me.z + (dz / len) * 14);
+      const r = await call(
+        ctx,
+        "walk_to",
+        { x, y: o.state.blockPosition.y, z, range: 4, sprint: true, timeoutSeconds: 12 },
+        25000,
+      );
+      return describeAction(r);
+    },
+  },
+  {
+    id: "eat",
+    label: (o) => `Comer ${hotbarFood(o)!.displayName} (fome ${o.state.food}/20)`,
+    available: (o) => o.state.food <= 14 && hotbarFood(o) !== undefined,
+    async run(o, _m, ctx) {
+      const food = hotbarFood(o)!;
+      const previous = o.state.selectedSlot;
+      await call(ctx, "select_slot", { slot: food.slot });
+      const r = await call(ctx, "use_item", { ticks: 40 }, 20000);
+      await call(ctx, "select_slot", { slot: previous });
+      return r.status === "done" ? `comeu ${food.displayName}` : describeAction(r);
+    },
   },
 ];
 
@@ -320,15 +380,17 @@ export class Agent {
     const inventory = ((await this.conn.call("get_inventory")) as Json).items;
     const entities = ((await this.conn.call("get_entities", { radius: 16 })) as Json).entities;
     const targets = m.target
-      ? ((await this.conn.call("find_blocks", { query: m.target, radius: 24, verticalRadius: 12, limit: 5 }, 30000)) as Json)
-          .blocks
+      ? (((await this.conn.call("find_blocks", { query: m.target, radius: 24, verticalRadius: 12, limit: 15 }, 30000)) as Json)
+          .blocks as Json[])
+          .filter((b) => !m.badTargets.has(`${b.x},${b.y},${b.z}`))
+          .slice(0, 5)
       : [];
     return { state, inventory, entities, targets };
   }
 
   /** Roda até o Jev dizer que terminou, acabar o limite de passos ou de LLM. */
   async run(goal: string, shouldStop: () => boolean = () => false): Promise<{ finished: boolean; steps: number; llmCalls: number }> {
-    const m: Memory = { goal, target: null, history: [], failStreak: new Map() };
+    const m: Memory = { goal, target: null, history: [], failStreak: new Map(), badTargets: new Set() };
     const ctx: SkillContext = {
       conn: this.conn,
       brain: this.brain,
@@ -356,7 +418,20 @@ export class Agent {
         log("[parou] o jogador morreu");
         return { finished: false, steps: step, llmCalls: this.llmCalls };
       }
-      const menu = SKILLS.filter((s) => s.available(o, m));
+      const reflex = REFLEXES.find((s) => s.available(o, m));
+      if (reflex) {
+        let result: string;
+        try {
+          result = await reflex.run(o, m, ctx);
+        } catch (err) {
+          if (err instanceof ModError && (err.code === "disconnected" || err.code === "not_connected")) throw err;
+          result = `erro: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        log(`[${step}] reflexo → ${reflex.label(o, m)} → ${result}`);
+        m.history.push(`${reflex.id}: ${result}`);
+        continue;
+      }
+      const menu = SKILLS.filter((s) => s.available(o, m)).slice(0, MAX_MENU);
       const labels = menu.map((s) => s.label(o, m));
       let choice: Choice;
       try {

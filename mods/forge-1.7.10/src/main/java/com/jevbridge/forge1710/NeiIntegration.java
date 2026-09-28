@@ -186,6 +186,10 @@ final class NeiIntegration {
     // ------------------------------------------------------------ receitas
 
     private static JsonObject recipes(JsonObject p, boolean usages) {
+        // Sem a lista do NEI carregada (menu principal, logo ao entrar no mundo), os
+        // handlers de receita respondem vazio: "0 receitas" levaria a IA a concluir
+        // que o item não tem receita.
+        allItems();
         ItemStack target = resolve(Json.requireString(p, "item"));
         int limit = Math.max(1, Math.min(20, Json.getInt(p, "limit", 5)));
         String handlerFilter = Json.getString(p, "handler", "")

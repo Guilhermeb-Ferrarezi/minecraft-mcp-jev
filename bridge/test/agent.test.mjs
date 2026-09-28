@@ -4,7 +4,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { ModConnection } from "../dist/connection.js";
-import { Agent, SKILLS } from "../dist/agent/agent.js";
+import { Agent, SKILLS, REFLEXES, MAX_MENU, targetCandidates } from "../dist/agent/agent.js";
 import { startMock, stopMock } from "./mock-mod.mjs";
 
 const PORT = 25900 + Math.floor(Math.random() * 90);
@@ -53,9 +53,11 @@ test("agente quebra os troncos e termina quando não sobra nenhum", async () => 
     assert.match(first.question, /Objetivo: conseguir madeira/);
     assert.match(first.question, /Alvo atual: log/);
     assert.ok(first.options.some((o) => o.startsWith("Quebrar")), first.options.join(" | "));
-    // Zumbi a ~7 blocos: atacar e fugir entram no menu; comer não (fome cheia).
+    // Zumbi a ~7 blocos com vida cheia: atacar entra no menu. Fugir e comer são
+    // reflexos (vida baixa / fome), nunca opções do menu.
     assert.ok(first.options.some((o) => o.startsWith("Atacar")));
-    assert.ok(!first.options.some((o) => o.startsWith("Comer")));
+    assert.ok(!first.options.some((o) => o.startsWith("Comer") || o.startsWith("Fugir")));
+    for (const q of brain.questions) assert.ok(q.options.length <= MAX_MENU, q.options.join(" | "));
     // Escalada (source != jev) conta no limite de LLM: 1 plano + 1 escalada.
     assert.equal(r.llmCalls, 2);
   } finally {
@@ -164,6 +166,35 @@ test("LLM não fica pedindo receita para sempre", async () => {
 });
 
 test("toda skill tem id único", () => {
-  const ids = SKILLS.map((s) => s.id);
+  const ids = [...SKILLS, ...REFLEXES].map((s) => s.id);
   assert.equal(new Set(ids).size, ids.length);
+});
+
+test("alvo do LLM ignora palavras de enchimento", () => {
+  assert.deepEqual(targetCandidates("log"), ["log"]);
+  assert.deepEqual(targetCandidates("The bot should find log"), ["log"]);
+  assert.deepEqual(targetCandidates("The bot should find `oak log` blocks."), ["oak", "log"]);
+  assert.deepEqual(targetCandidates("Procurar o bloco de stone agora"), ["stone"]);
+  assert.deepEqual(targetCandidates("pronto"), []);
+  assert.deepEqual(targetCandidates("Pronto."), []);
+});
+
+test("resposta longa do LLM ainda vira o alvo certo", async () => {
+  const conn = new ModConnection({ host: "127.0.0.1", port: PORT, token: TOKEN });
+  const brain = {
+    async choose(_q, options) {
+      return { index: options.findIndex((o) => o.startsWith("O objetivo")), confidence: 0.9, source: "jev" };
+    },
+    async ask() {
+      return "The bot should find some log blocks first.";
+    },
+  };
+  const lines = [];
+  const agent = new Agent(conn, brain, { maxSteps: 1, maxLlmCalls: 10, minStepMs: 0, log: (l) => lines.push(l) });
+  try {
+    await agent.run("conseguir madeira");
+    assert.ok(lines[0].includes('novo alvo: "log"'), lines[0]);
+  } finally {
+    conn.close();
+  }
 });

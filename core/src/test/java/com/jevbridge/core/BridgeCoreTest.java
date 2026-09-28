@@ -358,4 +358,103 @@ public class BridgeCoreTest {
         JsonObject r = call("walk_to", "{\"x\":1}");
         assertEquals("bad_params", r.getAsJsonObject("error").get("code").getAsString());
     }
+
+    @Test
+    public void walkToDoneMeansWithinRange() throws Exception {
+        login();
+        JsonObject r = ok("walk_to", "{\"x\":6,\"y\":" + Y + ",\"z\":0,\"range\":0.5}");
+        assertEquals("walk_to: " + r, "done", r.get("status").getAsString());
+        double d = Math.hypot(game.x - 6.5, game.z - 0.5);
+        assertTrue("done a " + d + " blocos com range 0.5", d <= 0.75);
+        assertTrue("devolve a distância final", r.has("distance"));
+    }
+
+    @Test
+    public void pausedGameFreezesActionTimer() throws Exception {
+        login();
+        game.paused = true;
+        // 30 ticks de caminho e 3 s (60 ticks) de prazo: pausado por ~250 ticks,
+        // só termina se o relógio da ação parar junto com o jogo.
+        int id = nextId++;
+        out.write(("{\"id\":" + id + ",\"method\":\"walk_to\",\"params\":{\"x\":6,\"y\":" + Y
+                + ",\"z\":0,\"range\":0,\"timeoutSeconds\":3}}\n").getBytes("UTF-8"));
+        out.flush();
+        Thread.sleep(600);
+        assertEquals("andou com o jogo pausado", 0.5, game.x, 1e-9);
+        game.paused = false;
+        while (true) {
+            JsonObject o = new JsonParser().parse(in.readLine()).getAsJsonObject();
+            if (o.has("id") && o.get("id").getAsInt() == id) {
+                JsonObject r = o.getAsJsonObject("result");
+                assertEquals("walk_to depois da pausa: " + r, "done", r.get("status").getAsString());
+                break;
+            }
+        }
+    }
+
+    @Test
+    public void useItemEatsWithoutOpeningTheBlockInSight() throws Exception {
+        login();
+        game.hotbar[1] = "minecraft:bread";
+        game.selected = 1;
+        game.set(2, Y + 1, 0, "minecraft:crafting_table");
+        Actions.lookAt(game, game.player(), 2.5, Y + 1.5, 0.5);
+        JsonObject r = ok("use_item", "{\"ticks\":40}");
+        assertEquals("use_item: " + r, "done", r.get("status").getAsString());
+        assertFalse("abriu a bancada em vez de comer", game.activatedBlock);
+        assertEquals(1, game.eaten);
+        assertFalse("soltou o botão", game.useHeld);
+    }
+
+    @Test
+    public void miningPicksTheBestToolFromTheHotbar() throws Exception {
+        login();
+        game.hotbar[4] = "minecraft:iron_axe";
+        game.set(2, Y, 0, "minecraft:log");
+        JsonObject r = ok("mine_block", "{\"x\":2,\"y\":" + Y + ",\"z\":0}");
+        assertEquals("mine: " + r, "done", r.get("status").getAsString());
+        assertEquals("trocou para o machado", 4, game.selected);
+        assertEquals(4, r.getAsJsonObject("tool").get("slot").getAsInt());
+    }
+
+    @Test
+    public void miningWarnsWhenNothingInTheHotbarHarvests() throws Exception {
+        login();
+        game.set(2, Y, 0, "minecraft:cobblestone_wall_stone");
+        JsonObject r = ok("mine_block", "{\"x\":2,\"y\":" + Y + ",\"z\":0}");
+        assertEquals("mine: " + r, "done", r.get("status").getAsString());
+        assertFalse("avisa que não vai dropar", r.get("canHarvest").getAsBoolean());
+    }
+
+    @Test
+    public void miningCanKeepTheCurrentItem() throws Exception {
+        login();
+        game.hotbar[4] = "minecraft:iron_axe";
+        game.set(2, Y, 0, "minecraft:log");
+        ok("mine_block", "{\"x\":2,\"y\":" + Y + ",\"z\":0,\"autoTool\":false}");
+        assertEquals(0, game.selected);
+    }
+
+    @Test
+    public void closeScreenUnblocksMining() throws Exception {
+        login();
+        game.set(2, Y, 0, "minecraft:log");
+        game.guiOpen = true;
+        assertEquals("FakeScreen", ok("close_screen", "{}").get("closed").getAsString());
+        assertFalse(game.guiOpen);
+        assertTrue(ok("close_screen", "{}").get("closed").isJsonNull());
+        assertEquals("done", ok("mine_block", "{\"x\":2,\"y\":" + Y + ",\"z\":0}").get("status").getAsString());
+    }
+
+    @Test
+    public void respawnAfterDeath() throws Exception {
+        login();
+        assertFalse(ok("respawn", "{}").get("wasDead").getAsBoolean());
+        game.dead = true;
+        game.guiOpen = true;
+        game.x = 10.5;
+        assertTrue(ok("respawn", "{}").get("wasDead").getAsBoolean());
+        assertFalse(ok("get_state", "{}").get("dead").getAsBoolean());
+        assertFalse(game.guiOpen);
+    }
 }

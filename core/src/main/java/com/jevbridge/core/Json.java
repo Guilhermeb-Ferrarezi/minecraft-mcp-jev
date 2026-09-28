@@ -184,6 +184,8 @@ public final class Json {
         o.addProperty("inLava", p.inLava);
         o.addProperty("dead", p.dead);
         o.addProperty("selectedSlot", p.selectedSlot);
+        o.addProperty("usingItem", p.usingItem);
+        o.addProperty("guiOpen", p.guiOpen);
         o.add("heldItem", item(p.heldItem));
         o.addProperty("timeOfDay", p.worldTime % 24000);
         o.addProperty("isNight", isNight(p.worldTime));

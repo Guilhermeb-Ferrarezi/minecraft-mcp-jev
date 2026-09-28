@@ -16,6 +16,8 @@ public final class PlayerSnapshot {
     /** Alguma tela aberta (inventário, chat, baú...): o jogo ignora cliques no mundo. */
     public boolean guiOpen;
     public int selectedSlot;
+    /** Comendo, bebendo, puxando arco... (o botão direito está "em uso"). */
+    public boolean usingItem;
     public ItemInfo heldItem;
     public long worldTime;
     public boolean raining;
