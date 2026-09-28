@@ -28,6 +28,10 @@ public class FakeGame implements GameAdapter {
     int mineProgress;
     String mining;
     boolean collided;
+    boolean attackHeld;
+    boolean guiOpen;
+    /** Ticks segurando M1 para quebrar um bloco (o jogo real depende de dureza/ferramenta). */
+    int ticksToBreak = 5;
 
     private static String key(int x, int y, int z) {
         return x + "," + y + "," + z;
@@ -52,8 +56,49 @@ public class FakeGame implements GameAdapter {
         return by <= GROUND ? "minecraft:stone" : "minecraft:air";
     }
 
-    /** Avança a física um tick (o "jogo" chama antes do núcleo). */
+    /**
+     * Um tick do "jogo", antes do núcleo — como o runTick do Minecraft: primeiro o
+     * clique (quebra o que está na mira se M1 estiver segurado, e ZERA o progresso
+     * se não estiver, igual ao vanilla), depois a física.
+     */
     public void physicsTick() {
+        BlockInfo aim = guiOpen ? null : raytrace();
+        if (attackHeld && aim != null) {
+            String k = key(aim.x, aim.y, aim.z);
+            if (!k.equals(mining)) {
+                mining = k;
+                mineProgress = 0;
+            }
+            if (++mineProgress >= ticksToBreak) {
+                set(aim.x, aim.y, aim.z, "minecraft:air");
+                mining = null;
+                mineProgress = 0;
+            }
+        } else {
+            mining = null;
+            mineProgress = 0;
+        }
+        movementTick();
+    }
+
+    /** Primeiro bloco não-ar na linha da mira, até o alcance. */
+    BlockInfo raytrace() {
+        double yawR = Math.toRadians(yaw), pitchR = Math.toRadians(pitch);
+        double dx = -Math.sin(yawR) * Math.cos(pitchR);
+        double dy = -Math.sin(pitchR);
+        double dz = Math.cos(yawR) * Math.cos(pitchR);
+        double ex = x, ey = y + 1.62, ez = z;
+        for (double t = 0; t <= reach(); t += 0.02) {
+            int bx = Geometry.floor(ex + dx * t), by = Geometry.floor(ey + dy * t), bz = Geometry.floor(ez + dz * t);
+            String n = nameAt(bx, by, bz);
+            if (!n.equals("minecraft:air") && !n.contains("water")) {
+                return blockAt(bx, by, bz);
+            }
+        }
+        return null;
+    }
+
+    private void movementTick() {
         int fx = Geometry.floor(x), fy = Geometry.floor(y + 1e-3), fz = Geometry.floor(z);
         boolean onGround = isSolid(fx, fy - 1, fz) && y - fy < 1e-3;
         collided = false;
@@ -121,6 +166,8 @@ public class FakeGame implements GameAdapter {
         s.onGround = isSolid(fx, fy - 1, fz) && y - fy < 1e-3;
         s.collidedHorizontally = collided;
         s.selectedSlot = selected;
+        s.guiOpen = guiOpen;
+        s.lookingAtBlock = guiOpen ? null : raytrace();
         s.heldItem = held == null ? null : new ItemInfo(selected, held, -1, held, 64, 0, 0);
         return s;
     }
@@ -148,13 +195,13 @@ public class FakeGame implements GameAdapter {
     @Override
     public boolean isSolid(int bx, int by, int bz) {
         String n = nameAt(bx, by, bz);
-        return !n.equals("minecraft:air") && !n.contains("water") && !n.contains("lava");
+        return !n.equals("minecraft:air") && !n.contains("water") && !n.contains("lava") && !n.contains("tallgrass");
     }
 
     @Override
     public boolean isPassable(int bx, int by, int bz) {
         String n = nameAt(bx, by, bz);
-        return n.equals("minecraft:air") || n.contains("water");
+        return n.equals("minecraft:air") || n.contains("water") || n.contains("tallgrass");
     }
 
     @Override
@@ -195,21 +242,8 @@ public class FakeGame implements GameAdapter {
     }
 
     @Override
-    public void mineTick(int bx, int by, int bz, int face) {
-        String k = key(bx, by, bz);
-        if (!k.equals(mining)) {
-            mining = k;
-            mineProgress = 0;
-        }
-        if (++mineProgress >= 5) {
-            set(bx, by, bz, "minecraft:air");
-            mining = null;
-        }
-    }
-
-    @Override
-    public void stopMining() {
-        mining = null;
+    public void setAttackHeld(boolean held) {
+        attackHeld = held;
     }
 
     @Override

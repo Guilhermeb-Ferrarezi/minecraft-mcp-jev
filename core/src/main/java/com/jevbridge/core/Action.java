@@ -24,7 +24,7 @@ public abstract class Action {
     /** Chamado sempre ao terminar (sucesso, falha, timeout ou cancelamento). */
     protected void cleanup(GameAdapter game) {
         game.setInput(null);
-        game.stopMining();
+        game.setAttackHeld(false);
         game.setUseHeld(false);
     }
 

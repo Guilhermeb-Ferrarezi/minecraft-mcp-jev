@@ -191,11 +191,21 @@ final class Actions {
         }
     }
 
-    /** Quebra o bloco em (x,y,z) segurando o "botão esquerdo" até ele sumir. */
+    /**
+     * Quebra o bloco em (x,y,z) como um jogador: mira e segura M1 até o bloco
+     * sumir. O próprio jogo faz a quebra (velocidade, ferramenta, drops), então
+     * funciona igual para qualquer bloco de qualquer mod.
+     */
     static final class MineBlock extends Action {
+        /** Ticks tolerados com a mira fora do alvo antes de desistir. */
+        private static final int MAX_OFF_TARGET = 10;
+        private static final int MAX_GUI_TICKS = 20;
+
         private final int x, y, z;
         private int face = -1;
         private String original;
+        private int offTarget;
+        private int guiTicks;
 
         MineBlock(Request r, int x, int y, int z, int timeoutTicks) {
             super(r, timeoutTicks);
@@ -237,9 +247,41 @@ final class Actions {
                 o.addProperty("ticks", ticks);
                 return o;
             }
+
             double[] c = Geometry.faceCenter(x, y, z, face);
             lookAt(game, p, c[0], c[1], c[2]);
-            game.mineTick(x, y, z, face);
+            if (ticks == 0) {
+                // Primeiro tick só mira. Soltar o botão também zera o bloqueio de
+                // clique que o jogo arma depois de fechar uma tela.
+                game.setAttackHeld(false);
+                return null;
+            }
+            if (p.guiOpen) {
+                game.setAttackHeld(false);
+                if (++guiTicks > MAX_GUI_TICKS) {
+                    return failed("gui_open", "tem uma tela aberta (inventário/chat/baú); feche antes de minerar");
+                }
+                return null;
+            }
+            guiTicks = 0;
+            BlockInfo aim = p.lookingAtBlock;
+            boolean onTarget = aim != null && aim.x == x && aim.y == y && aim.z == z;
+            // Grama alta/flor na frente quebra num clique; qualquer outra coisa sólida
+            // na mira não é nossa para quebrar.
+            boolean plantInTheWay = aim != null && !onTarget && !aim.solid && !aim.liquid;
+            if (onTarget || plantInTheWay) {
+                offTarget = 0;
+                game.setAttackHeld(true);
+                return null;
+            }
+            game.setAttackHeld(false);
+            if (++offTarget > MAX_OFF_TARGET) {
+                JsonObject o = failed("obstructed", "outro bloco está na frente do alvo");
+                if (aim != null) {
+                    o.add("blockInTheWay", Json.block(aim));
+                }
+                return o;
+            }
             return null;
         }
     }

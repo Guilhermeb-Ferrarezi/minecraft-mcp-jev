@@ -50,7 +50,7 @@ Um novo `hello` válido derruba o cliente anterior — só um controla o jogador
 | `attack` | `entityId` | `done` ou `failed` (`too_far`, `not_found`) |
 | `stop` | — | `stopped` |
 | `walk_to` | `x,y,z`, `range`=1, `sprint`, `timeoutSeconds` ≤ 300 | ação; `unreachable` quando não há caminho |
-| `mine_block` | `x,y,z`, `timeoutSeconds` ≤ 120 | ação; `too_far`, `unbreakable`, `liquid` |
+| `mine_block` | `x,y,z`, `timeoutSeconds` ≤ 120 | ação: mira e segura M1 até o bloco sumir (o jogo decide velocidade e drop); `too_far`, `unbreakable`, `liquid`, `obstructed` (bloco sólido na frente, vem em `blockInTheWay`), `gui_open` |
 | `place_block` | `x,y,z` | ação; `empty_hand`, `occupied`, `inside_player`, `no_support`, `too_far` |
 | `use_item` | `ticks` ≤ 200 | ação (segura botão direito) |
 | `move` | `forward`, `strafe`, `jump`, `sneak`, `sprint`, `ticks` ≤ 200 | ação |

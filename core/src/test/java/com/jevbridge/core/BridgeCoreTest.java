@@ -212,6 +212,53 @@ public class BridgeCoreTest {
     }
 
     @Test
+    public void miningHoldsTheButtonUntilSlowBlockBreaks() throws Exception {
+        login();
+        // Como o vanilla: progresso zera em todo tick sem M1 segurado. Um bloco de
+        // 40 ticks só quebra se o botão ficar segurado o tempo todo.
+        game.ticksToBreak = 40;
+        game.set(2, Y, 0, "minecraft:stone_brick");
+        JsonObject r = ok("mine_block", "{\"x\":2,\"y\":" + Y + ",\"z\":0}");
+        assertEquals("mine: " + r, "done", r.get("status").getAsString());
+        assertTrue(r.get("ticks").getAsInt() >= 40);
+        assertEquals("minecraft:air", game.nameAt(2, Y, 0));
+        assertFalse("soltou o botão no fim", game.attackHeld);
+    }
+
+    @Test
+    public void miningBreaksTallGrassInTheWay() throws Exception {
+        login();
+        game.set(2, Y, 0, "minecraft:log");
+        game.set(1, Y, 0, "minecraft:tallgrass");
+        JsonObject r = ok("mine_block", "{\"x\":2,\"y\":" + Y + ",\"z\":0}");
+        assertEquals("mine: " + r, "done", r.get("status").getAsString());
+        assertEquals("minecraft:air", game.nameAt(2, Y, 0));
+    }
+
+    @Test
+    public void miningRefusesToBreakSolidBlockInTheWay() throws Exception {
+        login();
+        game.set(3, Y, 0, "minecraft:log");
+        game.set(2, Y, 0, "minecraft:chest");
+        game.set(2, Y + 1, 0, "minecraft:chest");
+        game.set(3, Y + 1, 0, "minecraft:stone");
+        JsonObject r = ok("mine_block", "{\"x\":3,\"y\":" + Y + ",\"z\":0}");
+        assertEquals("mine: " + r, "obstructed", r.get("reason").getAsString());
+        assertEquals("minecraft:chest", game.nameAt(2, Y, 0));
+        assertEquals("minecraft:log", game.nameAt(3, Y, 0));
+    }
+
+    @Test
+    public void miningWithGuiOpenFails() throws Exception {
+        login();
+        game.set(2, Y, 0, "minecraft:log");
+        game.guiOpen = true;
+        JsonObject r = ok("mine_block", "{\"x\":2,\"y\":" + Y + ",\"z\":0}");
+        assertEquals("gui_open", r.get("reason").getAsString());
+        assertEquals("minecraft:log", game.nameAt(2, Y, 0));
+    }
+
+    @Test
     public void mineTooFar() throws Exception {
         login();
         game.set(20, Y, 0, "minecraft:log");

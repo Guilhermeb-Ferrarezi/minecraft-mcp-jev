@@ -13,6 +13,8 @@ public final class PlayerSnapshot {
     public String biome;
     public String gameMode;
     public boolean onGround, inWater, inLava, collidedHorizontally, dead;
+    /** Alguma tela aberta (inventário, chat, baú...): o jogo ignora cliques no mundo. */
+    public boolean guiOpen;
     public int selectedSlot;
     public ItemInfo heldItem;
     public long worldTime;

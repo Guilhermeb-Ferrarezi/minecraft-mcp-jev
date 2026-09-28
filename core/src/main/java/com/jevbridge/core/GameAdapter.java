@@ -58,11 +58,12 @@ public interface GameAdapter {
     /** Estado de movimento do bot; null devolve o controle ao jogador humano. */
     void setInput(InputState input);
 
-    /** Um tick de "segurar botão esquerdo" no bloco (inicia ou continua a quebra). */
-    void mineTick(int x, int y, int z, int face);
-
-    /** Cancela a quebra em andamento. */
-    void stopMining();
+    /**
+     * Segura (ou solta) o botão esquerdo, como um jogador segurando M1: o jogo
+     * quebra o bloco que estiver na mira. Quem chama mira antes ({@link #setLook})
+     * e confere a mira em {@link PlayerSnapshot#lookingAtBlock}.
+     */
+    void setAttackHeld(boolean held);
 
     /** Clique direito na face de um bloco (colocar bloco, abrir porta...). */
     boolean useOnBlock(int x, int y, int z, int face, double hitX, double hitY, double hitZ);

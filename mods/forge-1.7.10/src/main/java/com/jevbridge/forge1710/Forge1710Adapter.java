@@ -53,6 +53,7 @@ public final class Forge1710Adapter implements GameAdapter {
     private BotMovementInput botInput;
     private InputState input;
     private boolean useHeld;
+    private boolean attackHeld;
     /** Nome de exibição por bloco+meta, para blocos sem TileEntity (o caso comum na varredura). */
     private final Map<Long, String> displayNameCache = new HashMap<>();
 
@@ -88,9 +89,24 @@ public final class Forge1710Adapter implements GameAdapter {
                 .getFoodLevel() > 6) {
             p.setSprinting(true);
         }
-        // Reafirma o botão direito todo tick: perder o foco da janela solta todas as teclas.
+        // Reafirma os botões todo tick: abrir uma tela solta todas as teclas.
         if (useHeld) {
             KeyBinding.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), true);
+        }
+        if (attackHeld) {
+            holdAttack();
+        }
+    }
+
+    /**
+     * O vanilla só processa o M1 segurado com {@code inGameHasFocus}; ele fica
+     * false se uma tela foi fechada com a janela em segundo plano. Marcar como
+     * focado não captura o mouse: isso só acontece com a janela ativa.
+     */
+    private void holdAttack() {
+        KeyBinding.setKeyBindState(mc.gameSettings.keyBindAttack.getKeyCode(), true);
+        if (mc.currentScreen == null) {
+            mc.inGameHasFocus = true;
         }
     }
 
@@ -128,6 +144,7 @@ public final class Forge1710Adapter implements GameAdapter {
         s.collidedHorizontally = p.isCollidedHorizontally;
         s.dead = p.isDead || p.getHealth() <= 0;
         s.selectedSlot = p.inventory.currentItem;
+        s.guiOpen = mc.currentScreen != null;
         s.heldItem = item(p.inventory.currentItem, p.getHeldItem());
         s.worldTime = w.getWorldTime();
         s.raining = w.isRaining();
@@ -372,15 +389,18 @@ public final class Forge1710Adapter implements GameAdapter {
     }
 
     @Override
-    public void mineTick(int x, int y, int z, int face) {
-        mc.playerController.onPlayerDamageBlock(x, y, z, face);
-        mc.thePlayer.swingItem();
-    }
-
-    @Override
-    public void stopMining() {
-        if (mc.playerController != null) {
-            mc.playerController.resetBlockRemoving();
+    public void setAttackHeld(boolean held) {
+        if (held == attackHeld) {
+            if (held) {
+                holdAttack();
+            }
+            return;
+        }
+        attackHeld = held;
+        if (held) {
+            holdAttack();
+        } else {
+            KeyBinding.setKeyBindState(mc.gameSettings.keyBindAttack.getKeyCode(), false);
         }
     }
 
