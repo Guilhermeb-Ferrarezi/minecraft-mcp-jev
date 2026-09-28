@@ -50,6 +50,29 @@ final class Crafting {
                     () -> moveToHotbar(Json.requireString(p, "item"), Json.getInt(p, "hotbarSlot", -1)));
             }
         });
+        core.register(new Sync("container_list") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return containerList();
+            }
+        });
+        core.register(new Sync("container_take") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return withBogoFlag(
+                    () -> containerTake(Json.requireString(p, "item"), Math.max(1, Json.getInt(p, "count", 64))));
+            }
+        });
+        core.register(new Sync("container_put") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return withBogoFlag(
+                    () -> containerPut(Json.requireString(p, "item"), Math.max(1, Json.getInt(p, "count", 2304))));
+            }
+        });
         core.register(new Sync("use_block") {
 
             @Override
@@ -76,6 +99,30 @@ final class Crafting {
         public boolean async() {
             return false;
         }
+    }
+
+    /**
+     * Bancada 3x3: slot 0 é resultado de crafting e 1..9 uma grade de crafting de
+     * 9 casas. Cobre a vanilla e as de mods (Crafting Station do Tinkers...).
+     */
+    static boolean isTable(Container c) {
+        if (c instanceof ContainerWorkbench) {
+            return true;
+        }
+        if (c == null || c.inventorySlots.size() < 10
+            || !(c.getSlot(0) instanceof net.minecraft.inventory.SlotCrafting)) {
+            return false;
+        }
+        net.minecraft.inventory.IInventory grid = c.getSlot(1).inventory;
+        if (!(grid instanceof net.minecraft.inventory.InventoryCrafting) || grid.getSizeInventory() != 9) {
+            return false;
+        }
+        for (int i = 1; i <= 9; i++) {
+            if (c.getSlot(i).inventory != grid) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static EntityClientPlayerMP player() {
@@ -166,6 +213,145 @@ final class Crafting {
         return o;
     }
 
+    private static Container openNonPlayerContainer(EntityClientPlayerMP p) {
+        Container c = p.openContainer;
+        if (c == null || c == p.inventoryContainer) {
+            throw new RpcException("no_container", "nenhum contêiner aberto; abra um baú/gaveta com use_block");
+        }
+        return c;
+    }
+
+    private static String id(ItemStack s) {
+        return Item.itemRegistry.getNameForObject(s.getItem()) + ":" + s.getItemDamage();
+    }
+
+    /** Itens do contêiner aberto (só os slots que não são do jogador), somados por item. */
+    private static JsonObject containerList() {
+        EntityClientPlayerMP p = player();
+        Container c = openNonPlayerContainer(p);
+        java.util.Map<String, JsonObject> merged = new java.util.LinkedHashMap<>();
+        int slots = 0;
+        for (Object o : c.inventorySlots) {
+            Slot s = (Slot) o;
+            if (s.inventory == p.inventory) {
+                continue;
+            }
+            slots++;
+            ItemStack st = s.getStack();
+            if (st == null || st.getItem() == null) {
+                continue;
+            }
+            String key = id(st);
+            JsonObject e = merged.get(key);
+            if (e == null) {
+                e = new JsonObject();
+                e.addProperty("item", key);
+                e.addProperty("displayName", st.getDisplayName());
+                e.addProperty("count", 0);
+                merged.put(key, e);
+            }
+            e.addProperty(
+                "count",
+                e.get("count")
+                    .getAsInt() + st.stackSize);
+        }
+        JsonArray arr = new JsonArray();
+        for (JsonObject e : merged.values()) {
+            arr.add(e);
+        }
+        JsonObject out = new JsonObject();
+        out.addProperty(
+            "container",
+            c.getClass()
+                .getSimpleName());
+        out.addProperty("slots", slots);
+        out.add("items", arr);
+        return out;
+    }
+
+    /** Tira até count do item do contêiner aberto para o inventário (shift-clique por pilha). */
+    private static JsonObject containerTake(String want, int count) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityClientPlayerMP p = player();
+        Container c = openNonPlayerContainer(p);
+        int taken = 0;
+        for (int i = 0; i < c.inventorySlots.size() && taken < count; i++) {
+            Slot s = (Slot) c.inventorySlots.get(i);
+            if (s.inventory == p.inventory || !matches(s.getStack(), want)) {
+                continue;
+            }
+            int before = s.getStack().stackSize;
+            if (before <= count - taken) {
+                mc.playerController.windowClick(c.windowId, i, 0, 1, p); // pilha inteira
+            } else {
+                // Só parte: pega a pilha, devolve o excedente um a um... simples: clique esquerdo,
+                // solta (count - taken) no inventário com clique direito em slots vazios.
+                mc.playerController.windowClick(c.windowId, i, 0, 0, p);
+                int need = count - taken;
+                for (int k = 0; k < c.inventorySlots.size() && need > 0 && p.inventory.getItemStack() != null; k++) {
+                    Slot t = (Slot) c.inventorySlots.get(k);
+                    if (t.inventory == p.inventory && t.getSlotIndex() < 36 && !t.getHasStack()) {
+                        while (need > 0 && p.inventory.getItemStack() != null) {
+                            mc.playerController.windowClick(c.windowId, k, 1, 0, p);
+                            need--;
+                        }
+                    }
+                }
+                if (p.inventory.getItemStack() != null) {
+                    // O resto volta por shift-clique a partir de um slot vazio do jogador:
+                    // clicar de volta no slot de origem não funciona em contêiner de mod
+                    // (o compartment do Binnie ignora e a pilha inteira vinha junto).
+                    int park = emptyPlayerSlot(c, p);
+                    if (park >= 0) {
+                        mc.playerController.windowClick(c.windowId, park, 0, 0, p);
+                        mc.playerController.windowClick(c.windowId, park, 0, 1, p);
+                    }
+                }
+            }
+            ItemStack after = s.getStack();
+            taken += before - (after == null ? 0 : after.stackSize);
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("taken", taken);
+        o.addProperty("item", want);
+        return o;
+    }
+
+    private static int emptyPlayerSlot(Container c, EntityClientPlayerMP p) {
+        for (int k = 0; k < c.inventorySlots.size(); k++) {
+            Slot t = (Slot) c.inventorySlots.get(k);
+            if (t.inventory == p.inventory && t.getSlotIndex() < 36 && !t.getHasStack()) {
+                return k;
+            }
+        }
+        return -1;
+    }
+
+    /** Guarda até count do item do inventário no contêiner aberto (shift-clique por pilha). */
+    private static JsonObject containerPut(String want, int count) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityClientPlayerMP p = player();
+        Container c = openNonPlayerContainer(p);
+        int put = 0;
+        for (int i = 0; i < c.inventorySlots.size() && put < count; i++) {
+            Slot s = (Slot) c.inventorySlots.get(i);
+            if (s.inventory != p.inventory || s.getSlotIndex() >= 36 || !matches(s.getStack(), want)) {
+                continue;
+            }
+            int before = s.getStack().stackSize;
+            if (before > count - put) {
+                continue; // pilha maior que o pedido: não divide (evita sobra no cursor)
+            }
+            mc.playerController.windowClick(c.windowId, i, 0, 1, p);
+            ItemStack after = s.getStack();
+            put += before - (after == null ? 0 : after.stackSize);
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("put", put);
+        o.addProperty("item", want);
+        return o;
+    }
+
     /** "modid:nome", "modid:nome:meta" ou o nome de exibição. */
     private static boolean matches(ItemStack s, String query) {
         if (s == null || s.getItem() == null) {
@@ -239,11 +425,11 @@ final class Crafting {
                 "grid = 4 casas (2x2) ou 9 (3x3), em ordem de linha, nome do item ou null");
         }
         int times = Math.max(1, Math.min(64, Json.getInt(params, "times", 1)));
-        if (grid.size() == 9 && !(p.openContainer instanceof ContainerWorkbench)) {
+        if (grid.size() == 9 && !isTable(p.openContainer)) {
             grid = shrinkTo2x2(grid); // receita do NEI (3x3) que cabe no inventário
         }
         Container c = p.openContainer;
-        boolean table = c instanceof ContainerWorkbench;
+        boolean table = isTable(c);
         if (!table && c != p.inventoryContainer) {
             throw new RpcException("gui_open", "tem outra tela aberta; feche (close_screen) ou abra uma bancada");
         }

@@ -149,6 +149,47 @@ server.registerTool(
 );
 
 server.registerTool(
+  "container_list",
+  {
+    title: "Itens do contêiner aberto",
+    description:
+      "Lista os itens do baú/gaveta/máquina aberto (abra com use_block), somados por item: item (modid:nome:meta), " +
+      "displayName, count.",
+    annotations: readOnly,
+  },
+  () => forward("container_list"),
+);
+
+server.registerTool(
+  "container_take",
+  {
+    title: "Tirar do contêiner",
+    description: "Tira até count de um item do contêiner aberto para o inventário. Responde taken.",
+    inputSchema: {
+      item: z.string().min(1).describe("modid:nome[:meta] ou nome de exibição"),
+      count: z.number().int().min(1).max(2304).optional(),
+    },
+    annotations: acts,
+  },
+  (args) => forward("container_take", args),
+);
+
+server.registerTool(
+  "container_put",
+  {
+    title: "Guardar no contêiner",
+    description:
+      "Guarda até count de um item do inventário no contêiner aberto (pilhas inteiras). Responde put.",
+    inputSchema: {
+      item: z.string().min(1).describe("modid:nome[:meta] ou nome de exibição"),
+      count: z.number().int().min(1).max(2304).optional(),
+    },
+    annotations: acts,
+  },
+  (args) => forward("container_put", args),
+);
+
+server.registerTool(
   "use_block",
   {
     title: "Usar bloco",
