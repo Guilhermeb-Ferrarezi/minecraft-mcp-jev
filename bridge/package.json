@@ -4,13 +4,16 @@
   "description": "Servidor MCP que conecta uma IA ao mod JevBridge dentro do Minecraft",
   "type": "module",
   "bin": {
-    "jevbridge-mcp": "dist/index.js"
+    "jevbridge-mcp": "dist/index.js",
+    "jevbridge-agent": "dist/agent/cli.js"
   },
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "test:e2e": "npm run build && node test/e2e.mjs"
+    "test:e2e": "npm run build && node test/e2e.mjs",
+    "agent": "node dist/agent/cli.js",
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=18"

@@ -1,39 +1,16 @@
 // Teste ponta a ponta sem Minecraft: sobe o núcleo com o mundo falso
 // (core/ MockServerMain), abre este servidor MCP por stdio com o cliente
 // oficial do SDK e joga um roteiro curto: achar tronco, andar, quebrar, atacar.
-import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { startMock, stopMock } from "./mock-mod.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const coreDir = path.resolve(here, "../../core");
 const PORT = 25700 + Math.floor(Math.random() * 200);
 const TOKEN = "e2e-token-" + Date.now();
-
-function startMock() {
-  return new Promise((resolve, reject) => {
-    const win = process.platform === "win32";
-    const gradlew = path.join(coreDir, win ? "gradlew.bat" : "gradlew");
-    const proc = spawn(gradlew, ["-q", "--no-daemon", "runMock", `--args=${PORT} ${TOKEN}`], {
-      cwd: coreDir,
-      stdio: ["ignore", "pipe", "inherit"],
-      shell: win,
-      // Grupo próprio: matar só o gradlew deixaria a JVM do mock órfã.
-      detached: !win,
-    });
-    const timer = setTimeout(() => reject(new Error("mock não subiu em 120s")), 120000);
-    proc.stdout.on("data", (d) => {
-      if (String(d).includes("mock pronto")) {
-        clearTimeout(timer);
-        resolve(proc);
-      }
-    });
-    proc.on("exit", (code) => reject(new Error("mock saiu com código " + code)));
-  });
-}
 
 async function connect(token) {
   const transport = new StdioClientTransport({
@@ -51,7 +28,7 @@ function parse(res) {
   return JSON.parse(res.content[0].text);
 }
 
-const mock = await startMock();
+const mock = await startMock(PORT, TOKEN);
 let failed = false;
 try {
   const bad = await connect("token-errado");
@@ -112,10 +89,6 @@ try {
   failed = true;
   console.error("FALHOU:", err);
 } finally {
-  if (process.platform === "win32") {
-    spawn("taskkill", ["/pid", String(mock.pid), "/T", "/F"]);
-  } else {
-    process.kill(-mock.pid, "SIGTERM");
-  }
+  stopMock(mock);
 }
 process.exit(failed ? 1 : 0);

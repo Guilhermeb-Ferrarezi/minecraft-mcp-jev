@@ -12,7 +12,7 @@ Minecraft + mod JevBridge  ◄── TCP 127.0.0.1:25599, JSON por linha + token
 |---|---|
 | `core/` | núcleo independente de versão: protocolo, servidor TCP, config, pathfinding A*, ações (andar, minerar, colocar, usar item). Testes com um mundo falso. |
 | `mods/forge-1.7.10/` | adaptador fino para 1.7.10 (template oficial da GTNH). Compila o `core/` junto e gera o `.jar`. |
-| `bridge/` | servidor MCP (stdio) com 18 ferramentas. |
+| `bridge/` | servidor MCP (stdio) com 18 ferramentas, e o agente que joga sozinho com o Jev (`bridge/src/agent/`). |
 | `docs/PROTOCOL.md` | protocolo entre o mod e o servidor MCP. |
 
 ## Estado
@@ -71,11 +71,40 @@ com o que existe hoje a IA anda, coleta, luta e constrói, mas não avança de t
 Com a IA conectada o mod desliga o "pausar ao perder o foco", para o jogo seguir
 rodando com a janela em segundo plano.
 
+## Agente: dar um objetivo e o Jev se vira
+
+```sh
+cd bridge && npm install && npm run build
+QUIZ_KEY=qz_... JEV_BRIDGE_CONFIG=/caminho/da/instancia/.minecraft/config/jevbridge.properties \
+  npm run agent -- "conseguir madeira" --max-steps 200 --max-llm 30
+```
+
+Usa a mesma API do quiz-jev (`/quiz/answer`, chave `qz_...`), sem endpoint novo:
+
+1. **O LLM traduz o objetivo num alvo concreto** (modo pergunta livre): "conseguir
+   madeira" → procurar blocos com `log` no nome. Só é chamado de novo quando o
+   Jev escolhe "repensar" ou quando uma skill falha 3 vezes seguidas.
+2. **A cada passo o Jev escolhe a próxima skill**, como numa questão de múltipla
+   escolha: o agente monta o texto com objetivo, vida, fome, inventário, o que
+   tem por perto e as últimas ações, e lista como alternativas só as skills
+   possíveis agora. Com confiança baixa a própria API escala para o LLM.
+3. **A skill se vira com os parâmetros** a partir do estado (o bloco-alvo mais
+   perto, o mob hostil mais perto, a comida da hotbar) e executa pelo mod.
+
+Skills: ir até o alvo, quebrar o alvo, pegar itens do chão, atacar, fugir,
+comer, explorar, repensar o plano, objetivo cumprido. O que o agente consegue
+fazer é limitado a esse menu — para ele craftar, por exemplo, precisa existir a
+skill (e o mod ainda não mexe em GUI).
+
+Limites: `--max-steps` (padrão 200) e `--max-llm` (padrão 30, conta planos e
+escaladas — é o que custa). Ctrl+C para o agente e solta o jogador.
+
 ## Desenvolvimento
 
 ```sh
 cd core && ./gradlew test                   # testes do núcleo
 cd core && ./gradlew runMock --args="25599 dev-token"   # núcleo + mundo falso, sem Minecraft
+cd bridge && npm test                       # cliente da API do Jev + agente contra o mundo falso
 cd bridge && npm run test:e2e               # MCP ponta a ponta contra o mundo falso
 cd mods/forge-1.7.10 && ./gradlew runClient # Minecraft 1.7.10 de desenvolvimento com o mod
 ```
