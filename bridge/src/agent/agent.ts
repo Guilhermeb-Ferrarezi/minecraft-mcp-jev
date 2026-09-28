@@ -43,6 +43,8 @@ export interface SkillContext {
   conn: ModConnection;
   brain: Brain;
   countLlm(): void;
+  /** O mod expõe receitas do NEI (get_recipes)? */
+  hasRecipes: boolean;
 }
 
 export const DONE = "__done__";
@@ -79,27 +81,65 @@ async function call(ctx: SkillContext, method: string, params: Json = {}, timeou
   return ctx.conn.call(method, params, timeoutMs);
 }
 
-/** Pergunta ao LLM qual bloco procurar para o objetivo. */
+/** Resume receitas do NEI em poucas linhas para caber no contexto do LLM. */
+export function summarizeRecipes(data: Json): string {
+  const name = data.item?.displayName ?? "?";
+  if (!data.recipes?.length) return `${name}: nenhuma receita no NEI`;
+  const fmt = (list: Json[]) => (list ?? []).map((i: Json) => `${i.count}x ${i.displayName}`).join(" + ");
+  const lines = data.recipes.slice(0, 3).map((r: Json) => {
+    const machine = r.euPerTick ? ` [${r.euPerTick} EU/t, ${Math.round((r.durationTicks ?? 0) / 20)}s]` : "";
+    return `${name} (${r.handler}${machine}): ${fmt(r.ingredients)} -> ${fmt(r.outputs)}`;
+  });
+  const others = (data.byHandler ?? []).length > 1 ? ` (também em: ${data.byHandler.slice(1, 5).map((h: Json) => h.handler).join(", ")})` : "";
+  return lines.join("\n") + others;
+}
+
+const MAX_RECIPE_LOOKUPS = 2;
+
+/**
+ * Pergunta ao LLM qual bloco procurar para o objetivo. Se o NEI estiver
+ * disponível, o LLM pode pedir antes a receita de um item ("receita: X"); a
+ * receita volta no contexto e a pergunta é refeita.
+ */
 async function planTarget(o: Observation, m: Memory, ctx: SkillContext): Promise<string> {
-  ctx.countLlm();
-  const context =
-    `Estou jogando Minecraft 1.7.10 (modpack GT New Horizons) controlando um bot.\n` +
-    `Objetivo: ${m.goal}\n` +
-    `Inventário: ${summarizeInventory(o.inventory) || "vazio"}\n` +
-    `Histórico recente: ${m.history.slice(-5).join("; ") || "nenhum"}`;
-  const question =
-    "Qual tipo de bloco o bot deve procurar e quebrar AGORA para avançar no objetivo? " +
-    "Responda SOMENTE com uma palavra-chave curta em inglês que apareça no nome do bloco " +
-    "(ex.: log, stone, sand, gravel, iron, coal, dirt). Se o objetivo já foi cumprido, responda: pronto.";
-  const answer = (await ctx.brain.ask(context, question)).toLowerCase();
-  const word = answer.match(/[a-z_]+/)?.[0] ?? "";
-  if (!word || word === "pronto") {
-    m.target = null;
-    return "LLM acha que não há bloco a procurar";
+  const recipes: string[] = [];
+  for (let round = 0; ; round++) {
+    const canLookup = ctx.hasRecipes && round < MAX_RECIPE_LOOKUPS;
+    ctx.countLlm();
+    const context =
+      `Estou jogando Minecraft 1.7.10 (modpack GT New Horizons) controlando um bot.\n` +
+      `Objetivo: ${m.goal}\n` +
+      `Inventário: ${summarizeInventory(o.inventory) || "vazio"}\n` +
+      `Histórico recente: ${m.history.slice(-5).join("; ") || "nenhum"}` +
+      (recipes.length ? `\nReceitas consultadas no NEI:\n${recipes.join("\n")}` : "");
+    const question =
+      "Qual tipo de bloco o bot deve procurar e quebrar AGORA para avançar no objetivo? " +
+      "Responda SOMENTE com uma palavra-chave curta em inglês que apareça no nome do bloco " +
+      "(ex.: log, stone, sand, gravel, iron, coal, dirt). Se o objetivo já foi cumprido, responda: pronto." +
+      (canLookup
+        ? " Se precisar ver antes a receita de um item (as receitas do GTNH são diferentes do vanilla), " +
+          "responda só: receita: <nome do item em inglês>."
+        : "");
+    const answer = (await ctx.brain.ask(context, question)).trim();
+    const wanted = answer.match(/receita\s*:\s*(.+)/i)?.[1]?.trim();
+    if (wanted && canLookup) {
+      try {
+        recipes.push(summarizeRecipes(await call(ctx, "get_recipes", { item: wanted, limit: 3 }, 60000)));
+      } catch (err) {
+        recipes.push(`${wanted}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      m.history.push(`consultou receita de ${wanted}`);
+      continue;
+    }
+    const word = answer.toLowerCase().match(/[a-z_]+/)?.[0] ?? "";
+    if (!word || word === "pronto" || word === "receita") {
+      m.target = null;
+      return "LLM acha que não há bloco a procurar";
+    }
+    m.target = word;
+    const found: Json = await call(ctx, "find_blocks", { query: word, radius: 32, verticalRadius: 16, limit: 1 });
+    return `novo alvo: "${word}" (${found.totalMatches} por perto)${recipes.length ? `, depois de ver ${recipes.length} receita(s)` : ""}`;
   }
-  m.target = word;
-  const found: Json = await call(ctx, "find_blocks", { query: word, radius: 32, verticalRadius: 16, limit: 1 });
-  return `novo alvo: "${word}" (${found.totalMatches} por perto)`;
 }
 
 export const SKILLS: Skill[] = [
@@ -289,11 +329,18 @@ export class Agent {
   /** Roda até o Jev dizer que terminou, acabar o limite de passos ou de LLM. */
   async run(goal: string, shouldStop: () => boolean = () => false): Promise<{ finished: boolean; steps: number; llmCalls: number }> {
     const m: Memory = { goal, target: null, history: [], failStreak: new Map() };
-    const ctx: SkillContext = { conn: this.conn, brain: this.brain, countLlm: () => this.llmCalls++ };
+    const ctx: SkillContext = {
+      conn: this.conn,
+      brain: this.brain,
+      countLlm: () => this.llmCalls++,
+      hasRecipes: false,
+    };
     const log = this.opts.log;
 
     // Primeiro passo sem alvo: pede ao LLM para traduzir o objetivo em algo concreto.
     const first = await this.observe(m);
+    const methods = this.conn.info?.methods;
+    ctx.hasRecipes = Array.isArray(methods) && methods.includes("get_recipes");
     log(`[plano] ${await planTarget(first, m, ctx)}`);
 
     let brainErrors = 0;

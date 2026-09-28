@@ -108,6 +108,68 @@ server.registerTool(
   (args) => forward("find_blocks", args, 30000),
 );
 
+/** Métodos do NEI só existem se o NEI estiver instalado no cliente. */
+async function forwardNei(method: string, params: Record<string, unknown>): Promise<ToolResult> {
+  const r = await forward(method, params, 60000);
+  if (r.isError && r.content[0].text.includes('"unknown_method"')) {
+    return {
+      content: [{ type: "text", text: JSON.stringify({ error: "nei_unavailable", message: "o NEI não está instalado neste cliente" }) }],
+      isError: true,
+    };
+  }
+  return r;
+}
+
+server.registerTool(
+  "search_items",
+  {
+    title: "Procurar itens (NEI)",
+    description:
+      "Procura itens existentes no modpack pelo nome (ou id), como a busca do NEI. Use para descobrir o nome exato " +
+      "antes de get_recipes. Ex.: 'pickaxe', 'steel ingot', 'macerator'.",
+    inputSchema: {
+      query: z.string().min(1),
+      limit: z.number().int().min(1).max(50).optional().describe("padrão 20"),
+    },
+    annotations: readOnly,
+  },
+  (args) => forwardNei("search_items", args),
+);
+
+server.registerTool(
+  "get_recipes",
+  {
+    title: "Como fazer um item (NEI)",
+    description:
+      "Receitas que PRODUZEM o item — o mesmo que apertar R no NEI: bancada, fornalha, máquinas do GregTech (com " +
+      "euPerTick e durationTicks) e de outros mods. No GTNH as receitas são muito diferentes do vanilla: consulte " +
+      "antes de planejar. item = nome de exibição ('Iron Pickaxe') ou id ('minecraft:iron_pickaxe[:meta]'). " +
+      "byHandler lista todas as formas de fazer; handler filtra por uma (ex.: 'crafting', 'furnace', 'macerator').",
+    inputSchema: {
+      item: z.string().min(1),
+      limit: z.number().int().min(1).max(20).optional().describe("padrão 5"),
+      handler: z.string().optional(),
+    },
+    annotations: readOnly,
+  },
+  (args) => forwardNei("get_recipes", args),
+);
+
+server.registerTool(
+  "get_usages",
+  {
+    title: "Para que serve um item (NEI)",
+    description: "Receitas que USAM o item como ingrediente — o mesmo que apertar U no NEI.",
+    inputSchema: {
+      item: z.string().min(1),
+      limit: z.number().int().min(1).max(20).optional().describe("padrão 5"),
+      handler: z.string().optional(),
+    },
+    annotations: readOnly,
+  },
+  (args) => forwardNei("get_usages", args),
+);
+
 server.registerTool(
   "get_entities",
   {

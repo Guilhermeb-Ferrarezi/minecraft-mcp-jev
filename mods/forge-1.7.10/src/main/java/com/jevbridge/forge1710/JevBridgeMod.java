@@ -15,6 +15,7 @@ import com.jevbridge.core.BridgeCore;
 import com.jevbridge.core.BridgeLog;
 
 import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -63,6 +64,11 @@ public class JevBridgeMod {
         }
         adapter = new Forge1710Adapter();
         core = new BridgeCore(adapter, log, Tags.VERSION);
+        if (Loader.isModLoaded("NotEnoughItems")) {
+            // Classe separada: sem NEI instalado, nenhuma classe do NEI é carregada.
+            NeiIntegration.register(core);
+            LOG.info("JevBridge: integração com o NEI ativa (search_items, get_recipes, get_usages)");
+        }
         try {
             core.start(config);
             LOG.info("JevBridge: token em {}", config.file);

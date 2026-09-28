@@ -12,7 +12,12 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 /**
  * Coração do mod: recebe pedidos da rede, executa na thread do jogo e mantém a
@@ -32,6 +37,8 @@ public final class BridgeCore implements BridgeServer.Handler {
     private final BridgeLog log;
     private final String modVersion;
     private final ConcurrentLinkedQueue<Request> inbox = new ConcurrentLinkedQueue<Request>();
+    private final Map<String, BridgeExtension> extensions = new ConcurrentHashMap<String, BridgeExtension>();
+    private ExecutorService asyncWorker;
     private BridgeServer server;
     private BridgeConfig config;
     private volatile boolean disconnected;
@@ -45,6 +52,14 @@ public final class BridgeCore implements BridgeServer.Handler {
         this.modVersion = modVersion;
     }
 
+    /** Registra um método extra (antes de {@link #start}). */
+    public void register(BridgeExtension extension) {
+        if (METHODS.contains(extension.method())) {
+            throw new IllegalArgumentException("método já existe: " + extension.method());
+        }
+        extensions.put(extension.method(), extension);
+    }
+
     public void start(BridgeConfig config) throws IOException {
         this.config = config;
         server = new BridgeServer(config, log, this);
@@ -54,6 +69,9 @@ public final class BridgeCore implements BridgeServer.Handler {
     public void stop() {
         if (server != null) {
             server.stop();
+        }
+        if (asyncWorker != null) {
+            asyncWorker.shutdownNow();
         }
     }
 
@@ -76,6 +94,9 @@ public final class BridgeCore implements BridgeServer.Handler {
         o.addProperty("modVersion", modVersion);
         JsonArray methods = new JsonArray();
         for (String m : METHODS) {
+            methods.add(new JsonPrimitive(m));
+        }
+        for (String m : extensions.keySet()) {
             methods.add(new JsonPrimitive(m));
         }
         o.add("methods", methods);
@@ -236,6 +257,11 @@ public final class BridgeCore implements BridgeServer.Handler {
             r.respond(o);
             return;
         }
+        BridgeExtension ext = extensions.get(m);
+        if (ext != null) {
+            runExtension(ext, r);
+            return;
+        }
         if (!METHODS.contains(m)) {
             throw new RpcException("unknown_method", "método desconhecido: " + m);
         }
@@ -303,6 +329,37 @@ public final class BridgeCore implements BridgeServer.Handler {
                     Json.getBool(p, "jump", false), Json.getBool(p, "sneak", false), Json.getBool(p, "sprint", false));
             startAction(new Actions.Move(r, in, Math.max(1, Math.min(200, Json.getInt(p, "ticks", 10)))));
         }
+    }
+
+    private void runExtension(final BridgeExtension ext, final Request r) {
+        if (!ext.async()) {
+            r.respond(ext.handle(r.params));
+            return;
+        }
+        if (asyncWorker == null) {
+            // Uma thread só: consultas pesadas em fila, sem competir entre si.
+            asyncWorker = Executors.newSingleThreadExecutor(new ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable runnable) {
+                    Thread t = new Thread(runnable, "JevBridge-Async");
+                    t.setDaemon(true);
+                    return t;
+                }
+            });
+        }
+        asyncWorker.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    r.respond(ext.handle(r.params));
+                } catch (RpcException e) {
+                    r.fail(e.code, e.getMessage());
+                } catch (RuntimeException | LinkageError e) {
+                    log.warn("JevBridge: erro executando " + r.method, e);
+                    r.fail("internal", String.valueOf(e));
+                }
+            }
+        });
     }
 
     private void chat(Request r, String message) {

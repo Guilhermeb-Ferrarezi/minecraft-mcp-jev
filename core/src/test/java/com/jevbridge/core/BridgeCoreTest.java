@@ -14,6 +14,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -47,6 +48,43 @@ public class BridgeCoreTest {
                 }
             }
         }, "test");
+        core.register(new BridgeExtension() {
+            @Override
+            public String method() {
+                return "echo";
+            }
+
+            @Override
+            public boolean async() {
+                return false;
+            }
+
+            @Override
+            public JsonElement handle(JsonObject params) {
+                return params;
+            }
+        });
+        core.register(new BridgeExtension() {
+            @Override
+            public String method() {
+                return "slow_lookup";
+            }
+
+            @Override
+            public boolean async() {
+                return true;
+            }
+
+            @Override
+            public JsonElement handle(JsonObject params) {
+                if (!params.has("q")) {
+                    throw new RpcException("bad_params", "falta q");
+                }
+                JsonObject o = new JsonObject();
+                o.addProperty("thread", Thread.currentThread().getName());
+                return o;
+            }
+        });
         core.start(BridgeConfig.forTest(0, TOKEN, false));
         loop = new Thread(new Runnable() {
             @Override
@@ -244,6 +282,20 @@ public class BridgeCoreTest {
         JsonObject r = call("get_state", "{}");
         assertEquals("not_in_world", r.getAsJsonObject("error").get("code").getAsString());
         assertFalse(ok("status", "{}").get("inWorld").getAsBoolean());
+    }
+
+    @Test
+    public void extensions() throws Exception {
+        connect();
+        JsonObject hello = ok("hello", "{\"token\":\"" + TOKEN + "\"}");
+        assertTrue(hello.get("methods").toString().contains("slow_lookup"));
+        assertEquals(3, ok("echo", "{\"a\":3}").get("a").getAsInt());
+        assertEquals("JevBridge-Async", ok("slow_lookup", "{\"q\":1}").get("thread").getAsString());
+        JsonObject bad = call("slow_lookup", "{}");
+        assertEquals("bad_params", bad.getAsJsonObject("error").get("code").getAsString());
+        // Consulta de extensão não depende de estar num mundo.
+        game.inWorld = false;
+        ok("echo", "{}");
     }
 
     @Test

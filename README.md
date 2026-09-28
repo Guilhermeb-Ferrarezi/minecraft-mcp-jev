@@ -12,7 +12,7 @@ Minecraft + mod JevBridge  ◄── TCP 127.0.0.1:25599, JSON por linha + token
 |---|---|
 | `core/` | núcleo independente de versão: protocolo, servidor TCP, config, pathfinding A*, ações (andar, minerar, colocar, usar item). Testes com um mundo falso. |
 | `mods/forge-1.7.10/` | adaptador fino para 1.7.10 (template oficial da GTNH). Compila o `core/` junto e gera o `.jar`. |
-| `bridge/` | servidor MCP (stdio) com 18 ferramentas, e o agente que joga sozinho com o Jev (`bridge/src/agent/`). |
+| `bridge/` | servidor MCP (stdio) com 21 ferramentas (3 do NEI), e o agente que joga sozinho com o Jev (`bridge/src/agent/`). |
 | `docs/PROTOCOL.md` | protocolo entre o mod e o servidor MCP. |
 
 ## Estado
@@ -25,9 +25,14 @@ O mod compila contra o Minecraft 1.7.10 + Forge reais e o jar sai em bytecode Ja
 comportamento dentro do GTNH (pathfinding real, mineração, nomes dos minérios do
 GregTech) precisa ser validado rodando a instância. Espere ajustes.
 
-**Fora do escopo desta primeira versão:** crafting, baús/fornalhas/máquinas (qualquer
-GUI), consulta de receitas do NEI. No GTNH isso é o que faz o jogo progredir —
-com o que existe hoje a IA anda, coleta, luta e constrói, mas não avança de tier.
+**Integração com o NEI:** a IA consulta receitas (tecla R), usos (tecla U) e
+procura itens, incluindo máquinas do GregTech com EU/t e duração. Compilado
+contra o NEI 2.8.44 do GTNH 2.8.4 e com os nomes de campo do GT 5.09.51.482
+conferidos; ainda não rodado no jogo.
+
+**Fora do escopo por enquanto:** executar crafting e mexer em baús/fornalhas/
+máquinas (qualquer GUI). A IA já *sabe* a receita pelo NEI, mas ainda não
+consegue *fazer* — no GTNH é isso que faz o jogo progredir.
 
 ## Instalar no GTNH
 
@@ -82,8 +87,10 @@ QUIZ_KEY=qz_... JEV_BRIDGE_CONFIG=/caminho/da/instancia/.minecraft/config/jevbri
 Usa a mesma API do quiz-jev (`/quiz/answer`, chave `qz_...`), sem endpoint novo:
 
 1. **O LLM traduz o objetivo num alvo concreto** (modo pergunta livre): "conseguir
-   madeira" → procurar blocos com `log` no nome. Só é chamado de novo quando o
-   Jev escolhe "repensar" ou quando uma skill falha 3 vezes seguidas.
+   madeira" → procurar blocos com `log` no nome. Antes de decidir ele pode pedir
+   receitas do NEI (até 2 por plano): "fazer picareta de madeira" → vê que precisa
+   de tábuas e gravetos → vê que tábua vem de tronco → alvo `log`. Só é chamado de
+   novo quando o Jev escolhe "repensar" ou quando uma skill falha 3 vezes seguidas.
 2. **A cada passo o Jev escolhe a próxima skill**, como numa questão de múltipla
    escolha: o agente monta o texto com objetivo, vida, fome, inventário, o que
    tem por perto e as últimas ações, e lista como alternativas só as skills

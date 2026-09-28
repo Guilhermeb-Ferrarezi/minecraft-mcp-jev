@@ -26,6 +26,9 @@ public final class MockServerMain {
                 }
             }
         }, "mock");
+        core.register(new FakeRecipes("search_items"));
+        core.register(new FakeRecipes("get_recipes"));
+        core.register(new FakeRecipes("get_usages"));
         core.start(BridgeConfig.forTest(port, token, false));
         System.out.println("mock pronto na porta " + core.port());
         while (true) {

@@ -40,7 +40,7 @@ try {
 
   const client = await connect(TOKEN);
   const { tools } = await client.listTools();
-  assert.ok(tools.length >= 18, "ferramentas: " + tools.map((t) => t.name).join(","));
+  assert.ok(tools.length >= 21, "ferramentas: " + tools.map((t) => t.name).join(","));
   console.log(`ok  ${tools.length} ferramentas expostas`);
 
   const state = parse(await client.callTool({ name: "get_state", arguments: {} }));
@@ -80,6 +80,16 @@ try {
   assert.equal(cmd.isError, true);
   assert.equal(parse(cmd).error, "forbidden");
   console.log("ok  comandos bloqueados por padrão");
+
+  const recipes = parse(await client.callTool({ name: "get_recipes", arguments: { item: "wooden pickaxe" } }));
+  assert.equal(recipes.recipes[0].handler, "Shaped Crafting");
+  assert.equal(recipes.recipes[0].ingredients[0].count, 3);
+  const missing = await client.callTool({ name: "get_recipes", arguments: { item: "unobtainium" } });
+  assert.equal(missing.isError, true);
+  assert.equal(parse(missing).error, "not_found");
+  const items = parse(await client.callTool({ name: "search_items", arguments: { query: "pickaxe" } }));
+  assert.equal(items.totalMatches, 1);
+  console.log("ok  NEI: get_recipes, search_items e item inexistente");
 
   const events = parse(await client.callTool({ name: "get_events", arguments: {} }));
   assert.ok(Array.isArray(events.events));

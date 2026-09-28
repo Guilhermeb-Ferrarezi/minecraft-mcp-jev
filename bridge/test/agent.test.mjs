@@ -113,6 +113,56 @@ test("erro pontual da API é repetido; erro persistente para o agente", async ()
   }
 });
 
+test("planejamento consulta a receita no NEI antes de escolher o alvo", async () => {
+  const conn = new ModConnection({ host: "127.0.0.1", port: PORT, token: TOKEN });
+  const contexts = [];
+  const brain = {
+    async choose(_q, options) {
+      return { index: options.findIndex((o) => o.startsWith("O objetivo")), confidence: 0.9, source: "jev" };
+    },
+    async ask(context) {
+      contexts.push(context);
+      if (contexts.length === 1) return "receita: wooden pickaxe";
+      if (contexts.length === 2) return "receita: oak wood planks";
+      return "log";
+    },
+  };
+  const lines = [];
+  const agent = new Agent(conn, brain, { maxSteps: 3, maxLlmCalls: 10, minStepMs: 0, log: (l) => lines.push(l) });
+  try {
+    const r = await agent.run("fazer uma picareta de madeira");
+    assert.equal(r.finished, true, lines.join("\n"));
+    assert.equal(contexts.length, 3);
+    assert.match(contexts[1], /Wooden Pickaxe \(Shaped Crafting\): 3x Oak Wood Planks \+ 2x Stick -> 1x Wooden Pickaxe/);
+    assert.match(contexts[2], /Oak Wood Planks \(Shapeless Crafting\): 1x Oak Wood -> 4x Oak Wood Planks/);
+    assert.ok(lines[0].includes('novo alvo: "log"') && lines[0].includes("2 receita(s)"), lines[0]);
+    assert.equal(r.llmCalls, 3);
+  } finally {
+    conn.close();
+  }
+});
+
+test("LLM não fica pedindo receita para sempre", async () => {
+  const conn = new ModConnection({ host: "127.0.0.1", port: PORT, token: TOKEN });
+  let asks = 0;
+  const brain = {
+    async choose(_q, options) {
+      return { index: options.findIndex((o) => o.startsWith("O objetivo")), confidence: 0.9, source: "jev" };
+    },
+    async ask() {
+      asks++;
+      return "receita: unobtainium";
+    },
+  };
+  const agent = new Agent(conn, brain, { maxSteps: 2, maxLlmCalls: 10, minStepMs: 0, log: () => {} });
+  try {
+    await agent.run("algo impossível");
+    assert.equal(asks, 3, "2 consultas de receita + 1 pergunta final");
+  } finally {
+    conn.close();
+  }
+});
+
 test("toda skill tem id único", () => {
   const ids = SKILLS.map((s) => s.id);
   assert.equal(new Set(ids).size, ids.length);

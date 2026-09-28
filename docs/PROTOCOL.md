@@ -55,6 +55,23 @@ Um novo `hello` válido derruba o cliente anterior — só um controla o jogador
 | `use_item` | `ticks` ≤ 200 | ação (segura botão direito) |
 | `move` | `forward`, `strafe`, `jump`, `sneak`, `sprint`, `ticks` ≤ 200 | ação |
 
+### Extensões (só se o mod opcional estiver instalado; aparecem em `methods` do hello)
+
+Rodam fora da thread do jogo (consultas pesadas, não travam o jogo) e funcionam
+mesmo fora de um mundo. Erro `not_ready` enquanto o NEI carrega a lista de itens.
+
+| método | params | resultado |
+|---|---|---|
+| `search_items` | `query`, `limit` ≤ 50 | itens do modpack cujo nome/id contém `query` |
+| `get_recipes` | `item`, `limit` ≤ 20, `handler` | receitas que produzem o item (tecla R do NEI) |
+| `get_usages` | `item`, `limit` ≤ 20, `handler` | receitas que usam o item (tecla U do NEI) |
+
+`item` é o nome de exibição ("Iron Pickaxe"; sem nome exato, o mais curto que
+contém o texto) ou o id (`minecraft:iron_pickaxe[:meta]`). Cada receita:
+`handler`, `ingredients[]` (somados, com `alternatives` do OreDictionary),
+`outputs[]`, `otherStacks[]` (ex.: combustível) e, em máquinas do GregTech,
+`euPerTick` e `durationTicks`. `byHandler` lista todas as formas de fazer o item.
+
 Blocos: `{"x","y","z","name","meta","displayName","solid","liquid","unbreakable"}`.
 Em 1.7.10 o tipo depende de `name` + `meta`; `displayName` vem do `getPickBlock`
 (lê TileEntity), então minérios do GregTech aparecem como "Magnetite Ore" etc.
