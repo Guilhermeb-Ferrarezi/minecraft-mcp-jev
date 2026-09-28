@@ -224,7 +224,10 @@ public final class BridgeServer {
                 Connection previous = active;
                 active = this;
                 if (previous != null && previous != this) {
+                    // close() só avisa o handler se ainda for a conexão ativa; aqui já
+                    // não é, então avisa na mão para cancelar a ação do cliente antigo.
                     previous.close();
+                    handler.onDisconnect(previous);
                 }
                 log.info("JevBridge: cliente autenticado (" + Json.getString(params, "client", "?") + ")");
                 req.respond(handler.hello(params));

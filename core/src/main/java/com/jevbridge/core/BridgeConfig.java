@@ -20,18 +20,21 @@ public final class BridgeConfig {
     public final int port;
     public final String token;
     public final boolean enabled;
+    /** Deixa a IA mandar comandos (/give, /tp...) pelo chat. Desligado por padrão. */
+    public final boolean allowCommands;
     public final File file;
 
-    private BridgeConfig(String bindAddress, int port, String token, boolean enabled, File file) {
+    private BridgeConfig(String bindAddress, int port, String token, boolean enabled, boolean allowCommands, File file) {
         this.bindAddress = bindAddress;
         this.port = port;
         this.token = token;
         this.enabled = enabled;
+        this.allowCommands = allowCommands;
         this.file = file;
     }
 
-    public static BridgeConfig forTest(int port, String token) {
-        return new BridgeConfig("127.0.0.1", port, token, true, null);
+    public static BridgeConfig forTest(int port, String token, boolean allowCommands) {
+        return new BridgeConfig("127.0.0.1", port, token, true, allowCommands, null);
     }
 
     /** Lê (ou cria, com token aleatório) o arquivo de config dentro de gameDir/config. */
@@ -67,6 +70,10 @@ public final class BridgeConfig {
             p.setProperty("enabled", "true");
             changed = true;
         }
+        if (p.getProperty("allowCommands") == null) {
+            p.setProperty("allowCommands", "false");
+            changed = true;
+        }
         if (changed) {
             dir.mkdirs();
             OutputStream out = null;
@@ -88,7 +95,8 @@ public final class BridgeConfig {
             port = DEFAULT_PORT;
         }
         return new BridgeConfig(p.getProperty("bind").trim(), port, p.getProperty("token").trim(),
-                !"false".equalsIgnoreCase(p.getProperty("enabled").trim()), file);
+                !"false".equalsIgnoreCase(p.getProperty("enabled").trim()),
+                "true".equalsIgnoreCase(p.getProperty("allowCommands").trim()), file);
     }
 
     private static String randomToken() {

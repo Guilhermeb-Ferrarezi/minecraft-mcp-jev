@@ -1,0 +1,35 @@
+// Núcleo independente de versão. Não gera jar próprio para distribuição: cada
+// adaptador em mods/ compila estas fontes junto. Este build existe para rodar
+// os testes e o servidor falso (runMock) sem precisar do Minecraft.
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 8
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:-options'
+}
+
+dependencies {
+    // Mesma versão embutida no Minecraft 1.7.10: garante que o núcleo não usa API mais nova.
+    compileOnly 'com.google.code.gson:gson:2.2.4'
+    testImplementation 'com.google.code.gson:gson:2.2.4'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+tasks.register('runMock', JavaExec) {
+    description = 'Sobe o núcleo com um mundo falso (args: porta token)'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.jevbridge.core.MockServerMain'
+}

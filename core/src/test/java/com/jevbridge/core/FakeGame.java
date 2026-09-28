@@ -1,0 +1,250 @@
+package com.jevbridge.core;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Mundo falso com física simplificada, para testar o núcleo sem Minecraft:
+ * chão de pedra em y=63 (jogador pisa em y=64), blocos avulsos por cima,
+ * andar a 0,2 bloco/tick, subir degrau de 1 bloco pulando e cair 0,5/tick.
+ */
+public class FakeGame implements GameAdapter {
+    public static final int GROUND = 63;
+    public static final int SIZE = 60;
+
+    final Map<String, String> blocks = new HashMap<String, String>();
+    final List<EntityInfo> entities = new ArrayList<EntityInfo>();
+    final List<String> chat = new ArrayList<String>();
+    final List<Integer> attacked = new ArrayList<Integer>();
+    double x = 0.5, y = GROUND + 1, z = 0.5;
+    float yaw, pitch;
+    InputState input;
+    boolean useHeld;
+    int selected;
+    String held = "minecraft:dirt";
+    boolean inWorld = true;
+    int mineProgress;
+    String mining;
+    boolean collided;
+
+    private static String key(int x, int y, int z) {
+        return x + "," + y + "," + z;
+    }
+
+    public void set(int x, int y, int z, String name) {
+        if (name == null) {
+            blocks.remove(key(x, y, z));
+        } else {
+            blocks.put(key(x, y, z), name);
+        }
+    }
+
+    String nameAt(int bx, int by, int bz) {
+        String n = blocks.get(key(bx, by, bz));
+        if (n != null) {
+            return n;
+        }
+        if (by == 0) {
+            return "minecraft:bedrock";
+        }
+        return by <= GROUND ? "minecraft:stone" : "minecraft:air";
+    }
+
+    /** Avança a física um tick (o "jogo" chama antes do núcleo). */
+    public void physicsTick() {
+        int fx = Geometry.floor(x), fy = Geometry.floor(y + 1e-3), fz = Geometry.floor(z);
+        boolean onGround = isSolid(fx, fy - 1, fz) && y - fy < 1e-3;
+        collided = false;
+        if (input != null && (input.forward != 0 || input.strafe != 0)) {
+            double rad = Math.toRadians(yaw);
+            double speed = input.sprint ? 0.28 : 0.2;
+            double dx = (-Math.sin(rad) * input.forward + Math.cos(rad) * input.strafe) * speed;
+            double dz = (Math.cos(rad) * input.forward + Math.sin(rad) * input.strafe) * speed;
+            double nx = x + dx, nz = z + dz;
+            int bx = Geometry.floor(nx), bz = Geometry.floor(nz);
+            if (isPassable(bx, fy, bz) && isPassable(bx, fy + 1, bz)) {
+                x = nx;
+                z = nz;
+            } else if (input.jump && onGround && isPassable(bx, fy + 1, bz) && isPassable(bx, fy + 2, bz)
+                    && isPassable(fx, fy + 2, fz)) {
+                x = nx;
+                z = nz;
+                y = fy + 1;
+                return;
+            } else {
+                collided = true;
+            }
+        }
+        fx = Geometry.floor(x);
+        fz = Geometry.floor(z);
+        boolean grounded = y == Math.floor(y) && isSolid(fx, (int) y - 1, fz);
+        if (!grounded) {
+            y -= 0.5;
+            if (isSolid(fx, Geometry.floor(y), fz)) {
+                y = Geometry.floor(y) + 1;
+            }
+        }
+    }
+
+    @Override
+    public String minecraftVersion() {
+        return "fake";
+    }
+
+    @Override
+    public String loader() {
+        return "test";
+    }
+
+    @Override
+    public boolean inWorld() {
+        return inWorld;
+    }
+
+    @Override
+    public PlayerSnapshot player() {
+        PlayerSnapshot s = new PlayerSnapshot();
+        s.name = "Jev";
+        s.x = x;
+        s.y = y;
+        s.z = z;
+        s.yaw = yaw;
+        s.pitch = pitch;
+        s.health = 20;
+        s.maxHealth = 20;
+        s.food = 20;
+        s.dimension = "Overworld";
+        s.gameMode = "survival";
+        int fx = Geometry.floor(x), fy = Geometry.floor(y + 1e-3), fz = Geometry.floor(z);
+        s.onGround = isSolid(fx, fy - 1, fz) && y - fy < 1e-3;
+        s.collidedHorizontally = collided;
+        s.selectedSlot = selected;
+        s.heldItem = held == null ? null : new ItemInfo(selected, held, -1, held, 64, 0, 0);
+        return s;
+    }
+
+    @Override
+    public List<ItemInfo> inventory() {
+        List<ItemInfo> l = new ArrayList<ItemInfo>();
+        if (held != null) {
+            l.add(new ItemInfo(selected, held, -1, held, 64, 0, 0));
+        }
+        return l;
+    }
+
+    @Override
+    public BlockInfo blockAt(int bx, int by, int bz) {
+        if (!isLoaded(bx, bz)) {
+            return null;
+        }
+        String n = nameAt(bx, by, bz);
+        boolean liquid = n.contains("water") || n.contains("lava");
+        float hardness = n.contains("bedrock") ? -1 : 1.5f;
+        return new BlockInfo(bx, by, bz, n, -1, n.replace("minecraft:", ""), isSolid(bx, by, bz), liquid, hardness);
+    }
+
+    @Override
+    public boolean isSolid(int bx, int by, int bz) {
+        String n = nameAt(bx, by, bz);
+        return !n.equals("minecraft:air") && !n.contains("water") && !n.contains("lava");
+    }
+
+    @Override
+    public boolean isPassable(int bx, int by, int bz) {
+        String n = nameAt(bx, by, bz);
+        return n.equals("minecraft:air") || n.contains("water");
+    }
+
+    @Override
+    public boolean isWater(int bx, int by, int bz) {
+        return nameAt(bx, by, bz).contains("water");
+    }
+
+    @Override
+    public boolean isDangerous(int bx, int by, int bz) {
+        return nameAt(bx, by, bz).contains("lava");
+    }
+
+    @Override
+    public boolean isLoaded(int bx, int bz) {
+        return Math.abs(bx) <= SIZE && Math.abs(bz) <= SIZE;
+    }
+
+    @Override
+    public List<EntityInfo> entities(double radius) {
+        List<EntityInfo> l = new ArrayList<EntityInfo>();
+        for (EntityInfo e : entities) {
+            if (Geometry.dist(x, y, z, e.x, e.y, e.z) <= radius) {
+                l.add(e);
+            }
+        }
+        return l;
+    }
+
+    @Override
+    public void setLook(float yaw, float pitch) {
+        this.yaw = yaw;
+        this.pitch = pitch;
+    }
+
+    @Override
+    public void setInput(InputState input) {
+        this.input = input;
+    }
+
+    @Override
+    public void mineTick(int bx, int by, int bz, int face) {
+        String k = key(bx, by, bz);
+        if (!k.equals(mining)) {
+            mining = k;
+            mineProgress = 0;
+        }
+        if (++mineProgress >= 5) {
+            set(bx, by, bz, "minecraft:air");
+            mining = null;
+        }
+    }
+
+    @Override
+    public void stopMining() {
+        mining = null;
+    }
+
+    @Override
+    public boolean useOnBlock(int bx, int by, int bz, int face, double hitX, double hitY, double hitZ) {
+        if (held == null) {
+            return false;
+        }
+        int[] d = Geometry.FACE_DIR[face];
+        set(bx + d[0], by + d[1], bz + d[2], held);
+        return true;
+    }
+
+    @Override
+    public void setUseHeld(boolean held) {
+        useHeld = held;
+    }
+
+    @Override
+    public boolean attack(int entityId) {
+        attacked.add(entityId);
+        return true;
+    }
+
+    @Override
+    public void selectSlot(int slot) {
+        selected = slot;
+    }
+
+    @Override
+    public void sendChat(String message) {
+        chat.add(message);
+    }
+
+    @Override
+    public double reach() {
+        return 4.5;
+    }
+}

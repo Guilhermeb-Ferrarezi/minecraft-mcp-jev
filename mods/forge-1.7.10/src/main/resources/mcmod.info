@@ -1,0 +1,21 @@
+{
+	"modListVersion": 2,
+	"modList": [{
+		"modid": "${modId}",
+		"name": "${modName}",
+		"description": "Ponte entre o Minecraft e um servidor MCP: deixa uma IA (Jev) controlar o jogador local.",
+		"version": "${modVersion}",
+		"mcversion": "${minecraftVersion}",
+		"url": "https://github.com/Guilhermeb-Ferrarezi/minecraft-mcp-jev",
+		"updateUrl": "",
+		"authorList": ["Guilhermeb-Ferrarezi"],
+		"credits": "",
+		"logoFile": "",
+		"screenshots": [],
+		"parent": "",
+		"requiredMods": [],
+		"dependencies": [],
+		"dependants": [],
+		"useDependencyInformation": false
+	}]
+}
