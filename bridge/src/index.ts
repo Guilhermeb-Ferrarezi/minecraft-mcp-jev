@@ -219,6 +219,19 @@ server.registerTool(
 );
 
 server.registerTool(
+  "waila_data",
+  {
+    title: "Dados do servidor do bloco na mira (WAILA)",
+    description:
+      "O que o servidor mandou ao WAILA sobre o bloco que o jogador está olhando (use look_at antes e espere ~1 s): " +
+      "x/y/z, block e nbt (texto NBT com fluidos, energia, progresso). É a forma de ler tanques e máquinas no " +
+      "multiplayer, onde get_fluids vê vazio. ageMs = idade dos dados.",
+    annotations: readOnly,
+  },
+  () => forward("waila_data"),
+);
+
+server.registerTool(
   "use_block",
   {
     title: "Usar bloco",

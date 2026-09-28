@@ -338,7 +338,35 @@ public final class Forge1710Adapter implements GameAdapter {
         }
         Block b = mc.theWorld.getBlock(x, y, z);
         Material m = b.getMaterial();
-        return m == Material.lava || m == Material.fire || b == Blocks.cactus || b == Blocks.web;
+        return m == Material.lava || m == Material.fire
+            || b == Blocks.cactus
+            || b == Blocks.web
+            || isFluidPipe(x, y, z);
+    }
+
+    /**
+     * Cano de fluido do GregTech: com vapor ou outro fluido quente, encostar sem
+     * Hazmat mata ("was boiled alive" — o bot morreu assim em cima dos canos de
+     * vapor das Solar Boilers). O cliente não sabe a temperatura do que passa no
+     * cano, então todo cano de fluido conta como perigoso: não pisa, não atravessa.
+     */
+    private boolean isFluidPipe(int x, int y, int z) {
+        net.minecraft.tileentity.TileEntity te = mc.theWorld.getTileEntity(x, y, z);
+        if (te == null || !"BaseMetaPipeEntity".equals(
+            te.getClass()
+                .getSimpleName())) {
+            return false;
+        }
+        try {
+            Object meta = te.getClass()
+                .getMethod("getMetaTileEntity")
+                .invoke(te);
+            return meta != null && meta.getClass()
+                .getName()
+                .contains("Fluid");
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return true; // cano do GT que não dá pra identificar: na dúvida, evita
+        }
     }
 
     @Override
@@ -397,6 +425,11 @@ public final class Forge1710Adapter implements GameAdapter {
     public void setLook(float yaw, float pitch) {
         mc.thePlayer.rotationYaw = yaw;
         mc.thePlayer.rotationPitch = Math.max(-90f, Math.min(90f, pitch));
+        // A mira (objectMouseOver) só é recalculada ao desenhar um quadro; com a
+        // janela escondida ela ficaria parada no bloco antigo (e o WAILA junto).
+        try {
+            mc.entityRenderer.getMouseOver(1.0F);
+        } catch (RuntimeException ignored) {}
     }
 
     @Override

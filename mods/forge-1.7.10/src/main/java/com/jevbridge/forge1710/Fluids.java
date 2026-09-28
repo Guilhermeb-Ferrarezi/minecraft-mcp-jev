@@ -33,6 +33,23 @@ final class Fluids {
 
             @Override
             public String method() {
+                return "waila_data";
+            }
+
+            @Override
+            public boolean async() {
+                return false;
+            }
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return wailaData();
+            }
+        });
+        core.register(new BridgeExtension() {
+
+            @Override
+            public String method() {
                 return "get_fluids";
             }
 
@@ -46,6 +63,48 @@ final class Fluids {
                 return fluids(Json.requireInt(p, "x"), Json.requireInt(p, "y"), Json.requireInt(p, "z"));
             }
         });
+    }
+
+    /**
+     * Dados que o servidor mandou ao WAILA sobre o bloco na mira (o mesmo NBT que
+     * vira o painel "32000 / 32000 mB Water"). No multiplayer o cliente não tem o
+     * conteúdo dos tanques; o WAILA pede ao servidor só para o bloco olhado.
+     * Por reflexão: sem WAILA instalado, responde waila_unavailable.
+     */
+    static JsonObject wailaData() {
+        try {
+            Class<?> c = Class.forName("mcp.mobius.waila.api.impl.DataAccessorCommon");
+            Object acc = c.getField("instance")
+                .get(null);
+            if (acc == null) {
+                throw new RpcException("no_target", "o WAILA ainda não olhou para nada");
+            }
+            JsonObject o = new JsonObject();
+            Object mop = c.getField("mop")
+                .get(acc);
+            if (mop instanceof net.minecraft.util.MovingObjectPosition) {
+                net.minecraft.util.MovingObjectPosition m = (net.minecraft.util.MovingObjectPosition) mop;
+                o.addProperty("x", m.blockX);
+                o.addProperty("y", m.blockY);
+                o.addProperty("z", m.blockZ);
+            }
+            o.addProperty(
+                "block",
+                String.valueOf(
+                    c.getField("blockResource")
+                        .get(acc)));
+            long last = c.getField("timeLastUpdate")
+                .getLong(acc);
+            o.addProperty("ageMs", last > 0 ? System.currentTimeMillis() - last : -1);
+            Object nbt = c.getField("remoteNbt")
+                .get(acc);
+            o.addProperty("nbt", nbt == null ? null : nbt.toString());
+            return o;
+        } catch (ClassNotFoundException e) {
+            throw new RpcException("waila_unavailable", "WAILA não está instalado");
+        } catch (ReflectiveOperationException e) {
+            throw new RpcException("internal", "WAILA mudou por dentro: " + e);
+        }
     }
 
     private static JsonObject fluids(int x, int y, int z) {
