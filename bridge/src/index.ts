@@ -214,6 +214,10 @@ server.registerTool(
     inputSchema: {
       grid: z.array(z.string().nullable()).min(4).max(9),
       times: z.number().int().min(1).max(64).optional(),
+      clearGrid: z
+        .boolean()
+        .optional()
+        .describe("tira pro inventário o que já estiver na grade (bancadas que guardam itens, ex.: Crafting Station)"),
     },
     annotations: acts,
   },

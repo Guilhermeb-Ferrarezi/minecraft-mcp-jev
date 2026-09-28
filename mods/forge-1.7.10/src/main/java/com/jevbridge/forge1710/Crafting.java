@@ -438,10 +438,15 @@ final class Crafting {
         }
         int width = table ? 3 : 2;
         int cols = grid.size() == 9 ? 3 : 2;
+        if (Json.getBool(params, "clearGrid", false)) {
+            returnGrid(mc, c, p, width); // tira o que já estava na grade (ex.: Crafting Station) pro inventário
+        }
         for (int i = 1; i <= width * width; i++) {
             if (c.getSlot(i)
                 .getHasStack()) {
-                throw new RpcException("grid_not_empty", "a grade já tem itens; feche a tela para devolvê-los");
+                throw new RpcException(
+                    "grid_not_empty",
+                    "a grade já tem itens; use clearGrid=true para tirá-los pro inventário");
             }
         }
 
