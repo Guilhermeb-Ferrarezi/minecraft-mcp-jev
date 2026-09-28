@@ -39,6 +39,27 @@ final class WorldControl {
                 return listWorlds();
             }
         });
+        core.register(new Sync("leave_world") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return leaveWorld();
+            }
+        });
+        core.register(new Sync("list_servers") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return listServers();
+            }
+        });
+        core.register(new Sync("join_server") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return joinServer(Json.requireString(p, "name"));
+            }
+        });
         core.register(new Sync("open_world") {
 
             @Override
@@ -53,7 +74,12 @@ final class WorldControl {
         Runnable r = pending;
         if (r != null) {
             pending = null;
-            r.run();
+            try {
+                r.run();
+            } catch (RuntimeException | LinkageError e) {
+                // Nunca derrubar o jogo por causa de uma troca de mundo pedida pela IA.
+                JevBridgeMod.LOG.warn("JevBridge: troca de mundo falhou", e);
+            }
         }
     }
 
@@ -153,6 +179,105 @@ final class WorldControl {
         o.addProperty("status", "loading");
         o.addProperty("folder", folder);
         o.addProperty("name", name);
+        return o;
+    }
+
+    /** Sai do mundo/servidor e volta ao menu principal (o "Save and Quit"/"Disconnect" do ESC). */
+    private static JsonObject leaveWorld() {
+        final Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld == null) {
+            throw new RpcException("not_in_world", "já está no menu");
+        }
+        if (pending != null) {
+            throw new RpcException("busy", "já tem uma troca de mundo em andamento");
+        }
+        final boolean single = mc.isIntegratedServerRunning();
+        pending = new Runnable() {
+
+            @Override
+            public void run() {
+                if (mc.theWorld != null) {
+                    mc.theWorld.sendQuittingDisconnectingPacket();
+                    mc.loadWorld((net.minecraft.client.multiplayer.WorldClient) null);
+                }
+                mc.displayGuiScreen(new net.minecraft.client.gui.GuiMainMenu());
+            }
+        };
+        JsonObject o = new JsonObject();
+        o.addProperty("status", "leaving");
+        o.addProperty("singleplayer", single);
+        return o;
+    }
+
+    private static net.minecraft.client.multiplayer.ServerList servers() {
+        net.minecraft.client.multiplayer.ServerList list = new net.minecraft.client.multiplayer.ServerList(
+            Minecraft.getMinecraft());
+        list.loadServerList();
+        return list;
+    }
+
+    /** Servidores salvos na lista do Multiplayer (servers.dat). */
+    private static JsonObject listServers() {
+        net.minecraft.client.multiplayer.ServerList list = servers();
+        JsonArray arr = new JsonArray();
+        for (int i = 0; i < list.countServers(); i++) {
+            net.minecraft.client.multiplayer.ServerData d = list.getServerData(i);
+            JsonObject o = new JsonObject();
+            o.addProperty("name", d.serverName);
+            o.addProperty("address", d.serverIP);
+            arr.add(o);
+        }
+        JsonObject o = new JsonObject();
+        o.add("servers", arr);
+        return o;
+    }
+
+    /** Conecta num servidor da lista pelo nome ou endereço (como clicar em "Join Server"). */
+    private static JsonObject joinServer(String query) {
+        final Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld != null) {
+            throw new RpcException("already_in_world", "saia do mundo antes (leave_world)");
+        }
+        if (pending != null) {
+            throw new RpcException("busy", "já tem uma troca de mundo em andamento");
+        }
+        net.minecraft.client.multiplayer.ServerList list = servers();
+        net.minecraft.client.multiplayer.ServerData found = null;
+        String q = query.trim()
+            .toLowerCase(Locale.ROOT);
+        for (int i = 0; i < list.countServers(); i++) {
+            net.minecraft.client.multiplayer.ServerData d = list.getServerData(i);
+            if (d.serverName.toLowerCase(Locale.ROOT)
+                .equals(q)
+                || d.serverIP.toLowerCase(Locale.ROOT)
+                    .equals(q)) {
+                found = d;
+                break;
+            }
+        }
+        if (found == null) {
+            throw new RpcException("not_found", "nenhum servidor '" + query + "' na lista (veja list_servers)");
+        }
+        final net.minecraft.client.multiplayer.ServerData target = found;
+        pending = new Runnable() {
+
+            @Override
+            public void run() {
+                if (mc.theWorld == null) {
+                    // Mesma sequência da tela de Multiplayer: setupServerList cria o mapa
+                    // que connectToServer lê (sem ele, NPE), e connectToServer arma o
+                    // trinco do handshake do FML (abrir GuiConnecting direto deixa o
+                    // handshake preso até o servidor dar timeout).
+                    cpw.mods.fml.client.FMLClientHandler fml = cpw.mods.fml.client.FMLClientHandler.instance();
+                    fml.setupServerList();
+                    fml.connectToServer(new net.minecraft.client.gui.GuiMainMenu(), target);
+                }
+            }
+        };
+        JsonObject o = new JsonObject();
+        o.addProperty("status", "connecting");
+        o.addProperty("name", target.serverName);
+        o.addProperty("address", target.serverIP);
         return o;
     }
 }

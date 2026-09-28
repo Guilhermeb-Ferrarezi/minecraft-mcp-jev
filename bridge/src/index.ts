@@ -180,6 +180,39 @@ server.registerTool(
 );
 
 server.registerTool(
+  "leave_world",
+  {
+    title: "Sair do mundo",
+    description: "Sai do mundo ou do servidor e volta ao menu principal (salva no single player).",
+    annotations: acts,
+  },
+  () => forward("leave_world"),
+);
+
+server.registerTool(
+  "list_servers",
+  {
+    title: "Servidores salvos",
+    description: "Servidores da lista do Multiplayer (nome e endereço). Use antes de join_server.",
+    annotations: readOnly,
+  },
+  () => forward("list_servers"),
+);
+
+server.registerTool(
+  "join_server",
+  {
+    title: "Entrar num servidor",
+    description:
+      "Conecta num servidor da lista pelo nome ou endereço, a partir do menu. Responde na hora (connecting); " +
+      "chame get_state até parar de dar not_in_world.",
+    inputSchema: { name: z.string().min(1) },
+    annotations: acts,
+  },
+  (args) => forward("join_server", args),
+);
+
+server.registerTool(
   "list_worlds",
   {
     title: "Mundos do single player",
