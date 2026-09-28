@@ -133,6 +133,22 @@ server.registerTool(
 );
 
 server.registerTool(
+  "move_to_hotbar",
+  {
+    title: "Trazer item pra hotbar",
+    description:
+      "Traz um item do inventário (slots 9-35) para a hotbar, para poder segurá-lo com select_slot. " +
+      "Responde slot (0-8). hotbarSlot opcional; sem ele usa o primeiro slot vazio da hotbar.",
+    inputSchema: {
+      item: z.string().min(1).describe("modid:nome[:meta] ou nome de exibição"),
+      hotbarSlot: z.number().int().min(0).max(8).optional(),
+    },
+    annotations: acts,
+  },
+  (args) => forward("move_to_hotbar", args),
+);
+
+server.registerTool(
   "use_block",
   {
     title: "Usar bloco",

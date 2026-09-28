@@ -42,6 +42,14 @@ final class Crafting {
                 return craft(p);
             }
         });
+        core.register(new Sync("move_to_hotbar") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return withBogoFlag(
+                    () -> moveToHotbar(Json.requireString(p, "item"), Json.getInt(p, "hotbarSlot", -1)));
+            }
+        });
         core.register(new Sync("use_block") {
 
             @Override
@@ -108,6 +116,56 @@ final class Crafting {
         return o;
     }
 
+    /**
+     * Traz um item do inventário para a hotbar (a troca da tecla numérica no
+     * vanilla: clique modo 2). hotbarSlot -1 = primeiro slot vazio da hotbar, ou o
+     * selecionado se não houver vazio. Já na hotbar: só informa o slot.
+     */
+    private static JsonObject moveToHotbar(String want, int hotbarSlot) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityClientPlayerMP p = player();
+        Container c = p.inventoryContainer;
+        if (p.openContainer != c) {
+            throw new RpcException("gui_open", "feche a tela antes (close_screen)");
+        }
+        for (int i = 0; i < 9; i++) {
+            if (matches(p.inventory.mainInventory[i], want)) {
+                JsonObject o = new JsonObject();
+                o.addProperty("slot", i);
+                o.addProperty("moved", false);
+                return o;
+            }
+        }
+        int from = -1;
+        for (int i = 0; i < c.inventorySlots.size(); i++) {
+            Slot s = (Slot) c.inventorySlots.get(i);
+            if (s.inventory == p.inventory && s.getSlotIndex() >= 9
+                && s.getSlotIndex() < 36
+                && matches(s.getStack(), want)) {
+                from = i;
+                break;
+            }
+        }
+        if (from < 0) {
+            throw new RpcException("missing_items", "não tenho " + want);
+        }
+        int target = hotbarSlot;
+        if (target < 0 || target > 8) {
+            target = p.inventory.currentItem;
+            for (int i = 0; i < 9; i++) {
+                if (p.inventory.mainInventory[i] == null) {
+                    target = i;
+                    break;
+                }
+            }
+        }
+        mc.playerController.windowClick(c.windowId, from, target, 2, p);
+        JsonObject o = new JsonObject();
+        o.addProperty("slot", target);
+        o.addProperty("moved", true);
+        return o;
+    }
+
     /** "modid:nome", "modid:nome:meta" ou o nome de exibição. */
     private static boolean matches(ItemStack s, String query) {
         if (s == null || s.getItem() == null) {
@@ -146,6 +204,10 @@ final class Crafting {
     }
 
     private static JsonObject craft(JsonObject params) {
+        return withBogoFlag(() -> craftUnsafe(params));
+    }
+
+    private static JsonObject withBogoFlag(java.util.function.Supplier<JsonObject> body) {
         java.lang.reflect.Field flag = bogoFlag();
         boolean previous = false;
         try {
@@ -157,7 +219,7 @@ final class Crafting {
             flag = null;
         }
         try {
-            return craftUnsafe(params);
+            return body.get();
         } finally {
             if (flag != null) {
                 try {
