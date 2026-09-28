@@ -3,6 +3,7 @@ package com.jevbridge.forge1710;
 import java.io.IOException;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiIngameMenu;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.common.MinecraftForge;
 
@@ -35,6 +36,7 @@ public class JevBridgeMod {
 
     private BridgeCore core;
     private Forge1710Adapter adapter;
+    private boolean hadClient;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
@@ -81,13 +83,21 @@ public class JevBridgeMod {
             return;
         }
         Minecraft mc = Minecraft.getMinecraft();
+        boolean hasClient = core.hasClient();
         if (mc.thePlayer != null) {
             adapter.ensureInputHook();
             // Com a IA no controle, o jogo não pode pausar quando a janela perde o foco.
-            if (core.hasClient() && mc.gameSettings.pauseOnLostFocus) {
+            if (hasClient && mc.gameSettings.pauseOnLostFocus) {
                 mc.gameSettings.pauseOnLostFocus = false;
             }
+            // Menu de pausa aberto antes do agente conectar (ex.: trocou de janela
+            // antes) congelaria o single player: fecha uma vez, na conexão. Depois
+            // disso o ESC do jogador é respeitado e funciona como "pausar o Jev".
+            if (hasClient && !hadClient && mc.currentScreen instanceof GuiIngameMenu) {
+                mc.displayGuiScreen(null);
+            }
         }
+        hadClient = hasClient;
         core.tick();
     }
 
