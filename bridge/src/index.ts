@@ -190,6 +190,22 @@ server.registerTool(
 );
 
 server.registerTool(
+  "drop_item",
+  {
+    title: "Soltar item",
+    description:
+      "Solta pilhas inteiras de um item na direção em que o jogador olha (Ctrl+Q). Use look_at antes para mirar " +
+      "(ex.: jogar pó impuro no caldeirão com água para lavar). stacks = quantas pilhas (padrão 1).",
+    inputSchema: {
+      item: z.string().min(1).describe("modid:nome[:meta] ou nome de exibição"),
+      stacks: z.number().int().min(1).max(36).optional(),
+    },
+    annotations: acts,
+  },
+  (args) => forward("drop_item", args),
+);
+
+server.registerTool(
   "use_block",
   {
     title: "Usar bloco",

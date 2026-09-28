@@ -73,6 +73,13 @@ final class Crafting {
                     () -> containerPut(Json.requireString(p, "item"), Math.max(1, Json.getInt(p, "count", 2304))));
             }
         });
+        core.register(new Sync("drop_item") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return withBogoFlag(() -> dropItem(Json.requireString(p, "item"), Json.getInt(p, "stacks", 1)));
+            }
+        });
         core.register(new Sync("use_block") {
 
             @Override
@@ -317,6 +324,40 @@ final class Crafting {
         return o;
     }
 
+    /**
+     * Solta pilhas inteiras do item na direção em que o jogador olha (o Ctrl+Q do
+     * vanilla: clique modo 4, botão 1, no inventário). Serve para jogar pó no
+     * caldeirão com água, dar item pra alguém etc.
+     */
+    private static JsonObject dropItem(String want, int stacks) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityClientPlayerMP p = player();
+        Container c = p.inventoryContainer;
+        if (p.openContainer != c) {
+            throw new RpcException("gui_open", "feche a tela antes (close_screen)");
+        }
+        int dropped = 0, items = 0;
+        for (int i = 0; i < c.inventorySlots.size() && dropped < stacks; i++) {
+            Slot s = (Slot) c.inventorySlots.get(i);
+            if (s.inventory != p.inventory || s.getSlotIndex() >= 36 || !matches(s.getStack(), want)) {
+                continue;
+            }
+            int n = s.getStack().stackSize;
+            mc.playerController.windowClick(c.windowId, i, 1, 4, p);
+            if (!s.getHasStack()) {
+                dropped++;
+                items += n;
+            }
+        }
+        if (dropped == 0) {
+            throw new RpcException("missing_items", "não tenho " + want);
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("stacks", dropped);
+        o.addProperty("items", items);
+        return o;
+    }
+
     private static int emptyPlayerSlot(Container c, EntityClientPlayerMP p) {
         for (int k = 0; k < c.inventorySlots.size(); k++) {
             Slot t = (Slot) c.inventorySlots.get(k);
@@ -462,13 +503,19 @@ final class Crafting {
             }
             int gridSlot = 1 + (i / cols) * width + (i % cols);
             int placed = 0;
-            for (int guard = 0; placed < times; guard++) {
+            // Ferramenta (não empilha: martelo, lima, chave...) volta pra grade depois
+            // de cada craft, então vai uma vez só, não uma por craft.
+            int src0 = findSource(c, p, want);
+            int perCell = src0 >= 0 && c.getSlot(src0)
+                .getStack()
+                .getMaxStackSize() == 1 ? 1 : times;
+            for (int guard = 0; placed < perCell; guard++) {
                 int from = findSource(c, p, want);
                 if (from < 0) {
                     returnGrid(mc, c, p, width);
                     throw new RpcException(
                         "missing_items",
-                        "faltou " + want + " (precisa de " + times + " por casa em que aparece)");
+                        "faltou " + want + " (precisa de " + perCell + " por casa em que aparece)");
                 }
                 ItemStack clicked = mc.playerController.windowClick(c.windowId, from, 0, 0, p); // pega a pilha
                 if (p.inventory.getItemStack() == null || guard > 64) {
@@ -498,7 +545,7 @@ final class Crafting {
                                 .getName()
                             + "]");
                 }
-                while (placed < times && p.inventory.getItemStack() != null) {
+                while (placed < perCell && p.inventory.getItemStack() != null) {
                     mc.playerController.windowClick(c.windowId, gridSlot, 1, 0, p); // põe 1
                     placed++;
                 }
