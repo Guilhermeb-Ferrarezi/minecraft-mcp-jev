@@ -232,6 +232,39 @@ server.registerTool(
 );
 
 server.registerTool(
+  "dig_block",
+  {
+    title: "Golpe de mineração direto",
+    description:
+      "Quebra um bloco por pacote, sem depender da mira (bloco cercado por outros): stage 'start' começa (e diz " +
+      "ticksNeeded com a ferramenta da mão), espere esse tempo e mande stage 'finish'. Se o bloco continuar, repita " +
+      "esperando mais. Selecione a ferramenta antes (Wrench para máquina do GregTech, Wire Cutter para cabo).",
+    inputSchema: {
+      x: coord,
+      y: coord,
+      z: coord,
+      face: z.number().int().min(0).max(5).optional(),
+      stage: z.enum(["start", "finish"]).optional(),
+    },
+    annotations: acts,
+  },
+  (args) => forward("dig_block", args),
+);
+
+server.registerTool(
+  "gt_info",
+  {
+    title: "Máquina/cabo do GregTech",
+    description:
+      "Para um bloco do GregTech: front = face para onde a máquina está virada (saída do Battery Buffer, entrada do " +
+      "transformador) e connections = lados em que o cabo/cano está ligado. Serve para conferir fiação antes de ligar.",
+    inputSchema: { x: coord, y: coord, z: coord },
+    annotations: readOnly,
+  },
+  (args) => forward("gt_info", args),
+);
+
+server.registerTool(
   "find_item",
   {
     title: "Achar item nos baús (FindIt)",
@@ -256,7 +289,15 @@ server.registerTool(
     description:
       "Clique direito num bloco ao alcance: abre bancada, fornalha, baú (a tela abre no tick seguinte). " +
       "Depois de abrir uma bancada, craft aceita grade 3x3.",
-    inputSchema: { x: coord, y: coord, z: coord },
+    inputSchema: {
+      x: coord,
+      y: coord,
+      z: coord,
+      face: z.number().int().min(0).max(5).optional().describe("face clicada: 0 baixo,1 cima (padrão),2 norte,3 sul,4 oeste,5 leste"),
+      hx: z.number().min(0).max(1).optional().describe("ponto do clique dentro do bloco (0..1); padrão: centro da face"),
+      hy: z.number().min(0).max(1).optional(),
+      hz: z.number().min(0).max(1).optional(),
+    },
     annotations: acts,
   },
   (args) => forward("use_block", args),

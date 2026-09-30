@@ -84,7 +84,36 @@ final class Crafting {
 
             @Override
             public JsonElement handle(JsonObject p) {
-                return useBlock(Json.requireInt(p, "x"), Json.requireInt(p, "y"), Json.requireInt(p, "z"));
+                int face = p.has("face") ? Json.requireInt(p, "face") : 1;
+                if (face < 0 || face > 5) {
+                    throw new RpcException(
+                        "bad_params",
+                        "face vai de 0 a 5 (0 baixo, 1 cima, 2 norte, 3 sul, 4 oeste, 5 leste)");
+                }
+                double[] def = FACE_CENTER[face];
+                return useBlock(
+                    Json.requireInt(p, "x"),
+                    Json.requireInt(p, "y"),
+                    Json.requireInt(p, "z"),
+                    face,
+                    p.has("hx") ? p.get("hx")
+                        .getAsDouble() : def[0],
+                    p.has("hy") ? p.get("hy")
+                        .getAsDouble() : def[1],
+                    p.has("hz") ? p.get("hz")
+                        .getAsDouble() : def[2]);
+            }
+        });
+        core.register(new Sync("dig_block") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return digBlock(
+                    Json.requireInt(p, "x"),
+                    Json.requireInt(p, "y"),
+                    Json.requireInt(p, "z"),
+                    p.has("face") ? Json.requireInt(p, "face") : 1,
+                    p.has("stage") ? Json.requireString(p, "stage") : "start");
             }
         });
     }
@@ -141,7 +170,46 @@ final class Crafting {
     }
 
     /** Clique direito no bloco (abrir bancada, fornalha, baú), sem precisar mirar. */
-    private static JsonObject useBlock(int x, int y, int z) {
+    /** Ponto do clique (dentro do bloco, 0..1) no centro de cada face. */
+    private static final double[][] FACE_CENTER = { { 0.5, 0, 0.5 }, { 0.5, 1, 0.5 }, { 0.5, 0.5, 0 }, { 0.5, 0.5, 1 },
+        { 0, 0.5, 0.5 }, { 1, 0.5, 0.5 } };
+
+    /**
+     * Mineração direta por pacote, sem mira (bloco cercado por outros): stage
+     * "start" manda o início da quebra, "finish" o fim. O servidor só confere a
+     * distância e se passou tempo suficiente para a ferramenta da mão; se foi
+     * cedo demais, o bloco fica e é só mandar start/finish de novo esperando mais.
+     */
+    private static JsonObject digBlock(int x, int y, int z, int face, String stage) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityClientPlayerMP p = player();
+        double dist = Math.sqrt(p.getDistanceSq(x + 0.5, y + 0.5, z + 0.5));
+        if (dist > mc.playerController.getBlockReachDistance() + 1) {
+            throw new RpcException("too_far", "chegue mais perto (a " + Math.round(dist) + " blocos)");
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty(
+            "block",
+            mc.theWorld.getBlock(x, y, z)
+                .getLocalizedName());
+        if (mc.theWorld.isAirBlock(x, y, z)) {
+            o.addProperty("broken", true);
+            return o;
+        }
+        int status = "finish".equals(stage) ? 2 : 0;
+        mc.getNetHandler()
+            .addToSendQueue(new net.minecraft.network.play.client.C07PacketPlayerDigging(status, x, y, z, face));
+        p.swingItem();
+        // velocidade da ferramenta da mão no bloco (fração da quebra por tick)
+        float rel = mc.theWorld.getBlock(x, y, z)
+            .getPlayerRelativeBlockHardness(p, mc.theWorld, x, y, z);
+        o.addProperty("progressPerTick", rel);
+        o.addProperty("ticksNeeded", rel > 0 ? (int) Math.ceil(1.0 / rel) : -1);
+        o.addProperty("broken", false);
+        return o;
+    }
+
+    private static JsonObject useBlock(int x, int y, int z, int face, double hx, double hy, double hz) {
         Minecraft mc = Minecraft.getMinecraft();
         EntityClientPlayerMP p = player();
         double dist = Math.sqrt(p.getDistanceSq(x + 0.5, y + 0.5, z + 0.5));
@@ -155,8 +223,8 @@ final class Crafting {
             x,
             y,
             z,
-            1,
-            Vec3.createVectorHelper(x + 0.5, y + 1, z + 0.5));
+            face,
+            Vec3.createVectorHelper(x + hx, y + hy, z + hz));
         if (used) {
             p.swingItem();
         }

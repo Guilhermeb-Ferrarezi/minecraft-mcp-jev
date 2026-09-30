@@ -67,6 +67,9 @@ public class JevBridgeMod {
         WorldControl.register(core);
         Crafting.register(core);
         Fluids.register(core);
+        if (Loader.isModLoaded("gregtech")) {
+            GtInfo.register(core);
+        }
         if (Loader.isModLoaded("NotEnoughItems")) {
             // Classe separada: sem NEI instalado, nenhuma classe do NEI é carregada.
             NeiIntegration.register(core);
