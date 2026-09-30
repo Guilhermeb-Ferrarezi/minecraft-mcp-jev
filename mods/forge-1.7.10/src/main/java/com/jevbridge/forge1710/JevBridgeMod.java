@@ -71,6 +71,10 @@ public class JevBridgeMod {
             // Classe separada: sem NEI instalado, nenhuma classe do NEI é carregada.
             NeiIntegration.register(core);
             LOG.info("JevBridge: integração com o NEI ativa (search_items, get_recipes, get_usages)");
+            if (Loader.isModLoaded("findit")) {
+                FindIt.register(core);
+                LOG.info("JevBridge: busca de baús do FindIt ativa (find_item)");
+            }
         }
         try {
             core.start(config);

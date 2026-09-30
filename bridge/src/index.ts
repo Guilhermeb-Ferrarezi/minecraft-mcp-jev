@@ -232,6 +232,24 @@ server.registerTool(
 );
 
 server.registerTool(
+  "find_item",
+  {
+    title: "Achar item nos baús (FindIt)",
+    description:
+      "A busca do FindIt (a tecla do NEI que destaca os baús): o servidor procura o item em todos os inventários " +
+      "perto do jogador e devolve as posições (x/y/z) de cada baú/máquina que tem. Bem mais rápido que abrir baú por " +
+      "baú. item = 'modid:nome:meta' ou nome de exibição. answered=false: não achou nada ou cooldown (espere ~1 s). " +
+      "Só existe com o FindIt instalado.",
+    inputSchema: {
+      item: z.string().describe("'modid:nome:meta' ou nome de exibição"),
+      timeoutMs: z.number().int().min(200).max(10000).optional().describe("padrão 3000"),
+    },
+    annotations: readOnly,
+  },
+  (args) => forward("find_item", args, 15000),
+);
+
+server.registerTool(
   "use_block",
   {
     title: "Usar bloco",
