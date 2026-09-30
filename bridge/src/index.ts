@@ -252,6 +252,17 @@ server.registerTool(
 );
 
 server.registerTool(
+  "dump_items",
+  {
+    title: "Exportar lista de itens do NEI",
+    description: "Grava em path (arquivo no PC) um TSV com todos os itens do NEI: registro, meta e nome de exibição.",
+    inputSchema: { path: z.string().min(1) },
+    annotations: acts,
+  },
+  (args) => forward("dump_items", args, 60000),
+);
+
+server.registerTool(
   "gt_info",
   {
     title: "Máquina/cabo do GregTech",

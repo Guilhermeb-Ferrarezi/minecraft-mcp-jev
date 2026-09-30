@@ -55,6 +55,13 @@ final class NeiIntegration {
                 return recipes(p, false);
             }
         });
+        core.register(new Async("dump_items") {
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return dumpItems(Json.requireString(p, "path"));
+            }
+        });
         core.register(new Async("get_usages") {
 
             @Override
@@ -93,6 +100,34 @@ final class NeiIntegration {
                 "o NEI ainda está carregando a lista de itens; tente em alguns segundos");
         }
         return items;
+    }
+
+    /**
+     * Grava a lista inteira do NEI num TSV (registro, meta, nome de exibição) —
+     * para quem não tem o jogo (o servidor, o proxy do chat) traduzir id em nome.
+     */
+    private static JsonObject dumpItems(String path) {
+        List<ItemStack> items = allItems();
+        int n = 0;
+        try (java.io.Writer w = new java.io.OutputStreamWriter(
+            new java.io.FileOutputStream(path),
+            java.nio.charset.StandardCharsets.UTF_8)) {
+            for (ItemStack s : items) {
+                if (s == null || s.getItem() == null) {
+                    continue;
+                }
+                String name = displayName(s).replace('\t', ' ')
+                    .replace('\n', ' ');
+                w.write(registryName(s) + "\t" + s.getItemDamage() + "\t" + name + "\n");
+                n++;
+            }
+        } catch (java.io.IOException e) {
+            throw new RpcException("io_error", "não consegui gravar " + path + ": " + e.getMessage());
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("path", path);
+        o.addProperty("items", n);
+        return o;
     }
 
     private static String displayName(ItemStack s) {
