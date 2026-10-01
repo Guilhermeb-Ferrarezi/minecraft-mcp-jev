@@ -46,6 +46,67 @@ final class GtInfo {
                 return info(Json.requireInt(p, "x"), Json.requireInt(p, "y"), Json.requireInt(p, "z"));
             }
         });
+        core.register(new BridgeExtension() {
+
+            @Override
+            public String method() {
+                return "gt_circuit";
+            }
+
+            @Override
+            public boolean async() {
+                return false;
+            }
+
+            @Override
+            public JsonElement handle(JsonObject p) {
+                return circuit(
+                    Json.requireInt(p, "x"),
+                    Json.requireInt(p, "y"),
+                    Json.requireInt(p, "z"),
+                    Json.requireInt(p, "n"));
+            }
+        });
+    }
+
+    /**
+     * Escolhe o Programmed Circuit fantasma da máquina (o mesmo pacote que o clique
+     * no slot de circuito da GUI manda); n = 0 tira o circuito.
+     */
+    private static JsonObject circuit(int x, int y, int z, int n) {
+        TileEntity te = Minecraft.getMinecraft().theWorld.getTileEntity(x, y, z);
+        if (te == null || !te.getClass()
+            .getName()
+            .startsWith("gregtech.")) {
+            throw new RpcException("not_gregtech", "não é um bloco do GregTech");
+        }
+        if (n < 0 || n > 24) {
+            throw new RpcException("bad_params", "n vai de 0 a 24");
+        }
+        try {
+            Object stack = n == 0 ? null
+                : Class.forName("gregtech.api.util.GTUtility")
+                    .getMethod("getIntegratedCircuit", int.class)
+                    .invoke(null, n);
+            Class<?> pk = Class.forName("gregtech.api.net.GTPacketSetConfigurationCircuit");
+            Object packet = pk
+                .getConstructor(
+                    Class.forName("gregtech.api.metatileentity.BaseTileEntity"),
+                    net.minecraft.item.ItemStack.class)
+                .newInstance(te, stack);
+            Object nw = Class.forName("gregtech.api.enums.GTValues")
+                .getField("NW")
+                .get(null);
+            Class.forName("gregtech.api.net.IGT_NetworkHandler")
+                .getMethod("sendToServer", Class.forName("gregtech.api.net.GTPacket"))
+                .invoke(nw, packet);
+        } catch (ReflectiveOperationException | ClassCastException e) {
+            throw new RpcException("internal", "GregTech mudou? " + e);
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("circuit", n);
+        o.addProperty("sent", true);
+        return o;
     }
 
     private static String side(int s) {

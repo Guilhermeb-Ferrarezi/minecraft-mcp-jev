@@ -270,6 +270,19 @@ server.registerTool(
 );
 
 server.registerTool(
+  "gt_circuit",
+  {
+    title: "Circuito programado da máquina GT",
+    description:
+      "Escolhe o Programmed Circuit (fantasma, não gasta) da máquina GT em x,y,z — o mesmo que clicar no slot de " +
+      "circuito da GUI. n de 1 a 24; 0 tira. Use o número que o NEI mostra na receita.",
+    inputSchema: { x: z.number().int(), y: z.number().int(), z: z.number().int(), n: z.number().int().min(0).max(24) },
+    annotations: acts,
+  },
+  (args) => forward("gt_circuit", args),
+);
+
+server.registerTool(
   "fluid_slot",
   {
     title: "Tanque de fluido da GUI (ModularUI)",
