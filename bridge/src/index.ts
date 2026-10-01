@@ -252,6 +252,24 @@ server.registerTool(
 );
 
 server.registerTool(
+  "guard",
+  {
+    title: "Defesa automática",
+    description:
+      "Liga/desliga a defesa: todo tick, se um mob hostil estiver ao alcance, troca pra arma (padrão Kikoku, " +
+      "ExtraUtilities:lawSword, precisa estar na hotbar), bate e volta pro item anterior. Ignora Enderman e Zombie " +
+      "Pigman. Sem argumentos só mostra o estado (hits = golpes dados).",
+    inputSchema: {
+      enabled: z.boolean().optional(),
+      reach: z.number().min(1.5).max(5).optional().describe("alcance em blocos (padrão 3.8)"),
+      weapon: z.string().optional().describe("registro da arma, ex.: ExtraUtilities:lawSword"),
+    },
+    annotations: acts,
+  },
+  (args) => forward("guard", args),
+);
+
+server.registerTool(
   "dump_recipes",
   {
     title: "Exportar receitas (GregTech + bancada)",
