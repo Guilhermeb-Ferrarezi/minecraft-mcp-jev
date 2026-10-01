@@ -69,6 +69,13 @@ final class Crafting {
 
             @Override
             public JsonElement handle(JsonObject p) {
+                if (p.has("slot")) {
+                    return withBogoFlag(
+                        () -> putIntoSlot(
+                            Json.requireString(p, "item"),
+                            Math.max(1, Json.getInt(p, "count", 64)),
+                            Json.requireInt(p, "slot")));
+                }
                 return withBogoFlag(
                     () -> containerPut(Json.requireString(p, "item"), Math.max(1, Json.getInt(p, "count", 2304))));
             }
@@ -461,6 +468,59 @@ final class Crafting {
         JsonObject o = new JsonObject();
         o.addProperty("put", put);
         o.addProperty("item", want);
+        return o;
+    }
+
+    /**
+     * Põe até n do item num slot específico do contêiner (índice entre os slots que não são do jogador:
+     * na fornalha 0 = entrada, 1 = combustível). O shift-clique não serve quando o item é fundível e
+     * combustível ao mesmo tempo (carvão vegetal no GTNH vai sempre pra entrada).
+     */
+    private static JsonObject putIntoSlot(String want, int n, int slotIdx) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityClientPlayerMP p = player();
+        Container c = openNonPlayerContainer(p);
+        int target = -1, k = 0;
+        for (int i = 0; i < c.inventorySlots.size(); i++) {
+            if (((Slot) c.inventorySlots.get(i)).inventory != p.inventory && k++ == slotIdx) {
+                target = i;
+                break;
+            }
+        }
+        if (target < 0) {
+            throw new RpcException("bad_params", "o contêiner não tem o slot " + slotIdx);
+        }
+        Slot t = (Slot) c.inventorySlots.get(target);
+        int put = 0;
+        for (int i = 0; i < c.inventorySlots.size() && put < n; i++) {
+            Slot s = (Slot) c.inventorySlots.get(i);
+            if (s.inventory != p.inventory || s.getSlotIndex() >= 36 || !matches(s.getStack(), want)) {
+                continue;
+            }
+            mc.playerController.windowClick(c.windowId, i, 0, 0, p); // pilha no cursor
+            try {
+                while (put < n && p.inventory.getItemStack() != null) {
+                    int had = t.getStack() == null ? 0 : t.getStack().stackSize;
+                    mc.playerController.windowClick(c.windowId, target, 1, 0, p); // 1 item
+                    int now = t.getStack() == null ? 0 : t.getStack().stackSize;
+                    if (now <= had) {
+                        break; // cheio ou recusou
+                    }
+                    put += now - had;
+                }
+            } finally {
+                if (p.inventory.getItemStack() != null) {
+                    mc.playerController.windowClick(c.windowId, i, 0, 0, p); // devolve o resto
+                }
+            }
+            if (t.getStack() != null && t.getStack().stackSize >= t.getSlotStackLimit()) {
+                break;
+            }
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("put", put);
+        o.addProperty("item", want);
+        o.addProperty("slot", slotIdx);
         return o;
     }
 

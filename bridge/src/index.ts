@@ -183,6 +183,12 @@ server.registerTool(
     inputSchema: {
       item: z.string().min(1).describe("modid:nome[:meta] ou nome de exibição"),
       count: z.number().int().min(1).max(2304).optional(),
+      slot: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("slot de destino entre os do contêiner (fornalha: 0 entrada, 1 combustível); sem ele usa shift-clique"),
     },
     annotations: acts,
   },
