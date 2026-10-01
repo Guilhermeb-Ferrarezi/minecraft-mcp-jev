@@ -29,7 +29,7 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 public final class Guard {
 
     static volatile boolean enabled = true;
-    static volatile double reach = 3.8;
+    static volatile double reach = 4.5;
     static volatile String weapon = "ExtraUtilities:lawSword";
 
     private int cooldown;
@@ -60,7 +60,7 @@ public final class Guard {
                     reach = Math.max(
                         1.5,
                         Math.min(
-                            5.0,
+                            5.5,
                             p.get("reach")
                                 .getAsDouble()));
                 }
@@ -118,15 +118,21 @@ public final class Guard {
             return;
         }
         Entity target = null;
-        double best = reach * reach;
+        double best = reach;
         @SuppressWarnings("unchecked")
         List<Entity> list = mc.theWorld
-            .getEntitiesWithinAABBExcludingEntity(p, p.boundingBox.expand(reach, reach, reach));
+            .getEntitiesWithinAABBExcludingEntity(p, p.boundingBox.expand(reach + 2, reach + 2, reach + 2));
+        double ex = p.posX, ey = p.posY, ez = p.posZ; // no cliente o posY do jogador já é a altura do olho
         for (Entity e : list) {
-            if (!hostile(e)) {
+            // o servidor só aceita golpe com o centro do mob a menos de 6 blocos
+            if (!hostile(e) || p.getDistanceSqToEntity(e) >= 35.0) {
                 continue;
             }
-            double d = p.getDistanceSqToEntity(e);
+            // distância até a caixa do mob, não até o centro: mob grande (Giant Zombie) bate de mais longe
+            double dx = Math.max(Math.max(e.boundingBox.minX - ex, 0), ex - e.boundingBox.maxX);
+            double dy = Math.max(Math.max(e.boundingBox.minY - ey, 0), ey - e.boundingBox.maxY);
+            double dz = Math.max(Math.max(e.boundingBox.minZ - ez, 0), ez - e.boundingBox.maxZ);
+            double d = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (d < best) {
                 best = d;
                 target = e;

@@ -261,7 +261,7 @@ server.registerTool(
       "Pigman. Sem argumentos só mostra o estado (hits = golpes dados).",
     inputSchema: {
       enabled: z.boolean().optional(),
-      reach: z.number().min(1.5).max(5).optional().describe("alcance em blocos (padrão 3.8)"),
+      reach: z.number().min(1.5).max(5.5).optional().describe("alcance em blocos até a borda do mob (padrão 4.5)"),
       weapon: z.string().optional().describe("registro da arma, ex.: ExtraUtilities:lawSword"),
     },
     annotations: acts,
