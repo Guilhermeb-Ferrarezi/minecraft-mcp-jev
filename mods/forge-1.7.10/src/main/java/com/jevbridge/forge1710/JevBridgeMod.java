@@ -68,6 +68,9 @@ public class JevBridgeMod {
         Crafting.register(core);
         Fluids.register(core);
         Guard.register(core);
+        if (Loader.isModLoaded("modularui")) {
+            FluidSlots.register(core);
+        }
         if (Loader.isModLoaded("gregtech")) {
             GtInfo.register(core);
             RecipeDump.register(core);

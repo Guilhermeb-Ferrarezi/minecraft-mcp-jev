@@ -270,6 +270,24 @@ server.registerTool(
 );
 
 server.registerTool(
+  "fluid_slot",
+  {
+    title: "Tanque de fluido da GUI (ModularUI)",
+    description:
+      "Tanques das GUIs do ModularUI (máquinas GT) não são slots: sem index lista os tanques da tela aberta " +
+      "(fluido, quantidade); com index e item (ex.: IC2:itemCellEmpty:0) põe o recipiente no cursor, clica no " +
+      "tanque (enche/esvazia) e devolve o cursor ao inventário. button 0 = esquerdo.",
+    inputSchema: {
+      index: z.number().int().min(0).optional(),
+      item: z.string().optional(),
+      button: z.number().int().min(0).max(1).optional(),
+    },
+    annotations: acts,
+  },
+  (args) => forward("fluid_slot", args),
+);
+
+server.registerTool(
   "dump_recipes",
   {
     title: "Exportar receitas (GregTech + bancada)",
