@@ -449,7 +449,10 @@ final class Crafting {
             }
             int before = s.getStack().stackSize;
             if (before > count - put) {
-                continue; // pilha maior que o pedido: não divide (evita sobra no cursor)
+                // pilha maior que o pedido: pega a pilha, põe uma por uma (clique direito) num
+                // slot do contêiner que aceite o item e devolve o resto ao lugar
+                put += splitInto(c, i, s, count - put, p);
+                continue;
             }
             mc.playerController.windowClick(c.windowId, i, 0, 1, p);
             ItemStack after = s.getStack();
@@ -459,6 +462,41 @@ final class Crafting {
         o.addProperty("put", put);
         o.addProperty("item", want);
         return o;
+    }
+
+    /** Coloca n itens da pilha do slot src em slots do contêiner (fora do inventário), um por clique. */
+    private static int splitInto(Container c, int src, Slot from, int n, EntityClientPlayerMP p) {
+        Minecraft mc = Minecraft.getMinecraft();
+        ItemStack model = from.getStack()
+            .copy();
+        int put = 0;
+        mc.playerController.windowClick(c.windowId, src, 0, 0, p); // pilha no cursor
+        try {
+            for (int j = 0; j < c.inventorySlots.size() && put < n; j++) {
+                Slot t = (Slot) c.inventorySlots.get(j);
+                if (t.inventory == p.inventory || !t.isItemValid(model)) {
+                    continue;
+                }
+                ItemStack in = t.getStack();
+                if (in != null && !(in.isItemEqual(model) && ItemStack.areItemStackTagsEqual(in, model))) {
+                    continue;
+                }
+                while (put < n && p.inventory.getItemStack() != null) {
+                    int had = t.getStack() == null ? 0 : t.getStack().stackSize;
+                    mc.playerController.windowClick(c.windowId, j, 1, 0, p); // clique direito: 1 item
+                    int now = t.getStack() == null ? 0 : t.getStack().stackSize;
+                    if (now <= had) {
+                        break; // slot cheio ou recusou
+                    }
+                    put += now - had;
+                }
+            }
+        } finally {
+            if (p.inventory.getItemStack() != null) {
+                mc.playerController.windowClick(c.windowId, src, 0, 0, p); // devolve o resto
+            }
+        }
+        return put;
     }
 
     /** "modid:nome", "modid:nome:meta" ou o nome de exibição. */
