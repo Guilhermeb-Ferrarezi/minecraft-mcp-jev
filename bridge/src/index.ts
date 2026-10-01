@@ -252,6 +252,17 @@ server.registerTool(
 );
 
 server.registerTool(
+  "dump_recipes",
+  {
+    title: "Exportar receitas (GregTech + bancada)",
+    description: "Grava em path um JSONL com todas as receitas de máquina do GregTech e de bancada, com nomes de exibição.",
+    inputSchema: { path: z.string().min(1) },
+    annotations: acts,
+  },
+  (args) => forward("dump_recipes", args, 300000),
+);
+
+server.registerTool(
   "dump_items",
   {
     title: "Exportar lista de itens do NEI",

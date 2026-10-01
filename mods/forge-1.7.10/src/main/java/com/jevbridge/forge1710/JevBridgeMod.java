@@ -69,6 +69,7 @@ public class JevBridgeMod {
         Fluids.register(core);
         if (Loader.isModLoaded("gregtech")) {
             GtInfo.register(core);
+            RecipeDump.register(core);
         }
         if (Loader.isModLoaded("NotEnoughItems")) {
             // Classe separada: sem NEI instalado, nenhuma classe do NEI é carregada.
